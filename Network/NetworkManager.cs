@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using Telepathy;
 using AutonautsMP.Core;
 
@@ -14,6 +15,17 @@ namespace AutonautsMP.Network
         Connecting,
         Connected,
         Hosting
+    }
+    
+    /// <summary>
+    /// Internal message types for the networking protocol.
+    /// </summary>
+    internal enum NetMessageType : byte
+    {
+        PlayerInfo = 1,      // Player sends their name
+        Ping = 2,            // Ping request
+        Pong = 3,            // Ping response
+        PlayerList = 4,      // Server sends list of all players
     }
 
     /// <summary>
@@ -33,6 +45,17 @@ namespace AutonautsMP.Network
         // State
         private ConnectionState _state = ConnectionState.Disconnected;
         private readonly List<int> _connectedClients = new List<int>();
+        
+        // Player info tracking
+        private readonly Dictionary<int, PlayerInfo> _players = new Dictionary<int, PlayerInfo>();
+        private PlayerInfo _localPlayer;
+        private string _localPlayerName;
+        
+        // Ping tracking
+        private readonly Dictionary<int, DateTime> _pendingPings = new Dictionary<int, DateTime>();
+        private DateTime _lastPingTime = DateTime.MinValue;
+        private const float PING_INTERVAL = 2f; // Send ping every 2 seconds
+        private int _clientPing = 0; // Client's ping to server
 
         // Events
         public event Action<ConnectionState> OnStateChanged;
@@ -40,21 +63,30 @@ namespace AutonautsMP.Network
         public event Action<int> OnPlayerDisconnected;         // clientId
         public event Action<int, byte[]> OnDataReceived;       // clientId, data
         public event Action<string> OnError;
+        public event Action OnPlayerListUpdated;               // Called when player list changes
 
         // Properties
         public ConnectionState State => _state;
         public bool IsHost => _state == ConnectionState.Hosting;
         public bool IsClient => _state == ConnectionState.Connected;
         public bool IsConnected => _state == ConnectionState.Connected || _state == ConnectionState.Hosting;
-        public int ConnectedPlayerCount => IsHost ? _connectedClients.Count + 1 : _connectedClients.Count;
+        public int ConnectedPlayerCount => IsHost ? _players.Count + 1 : _players.Count;
+        public IReadOnlyList<int> ConnectedClientIds => _connectedClients.AsReadOnly();
+        public IReadOnlyDictionary<int, PlayerInfo> Players => _players;
+        public PlayerInfo LocalPlayer => _localPlayer;
+        public string LocalPlayerName => _localPlayerName;
+        public int ClientPing => _clientPing;
 
         private NetworkManager()
         {
             // Initialize Telepathy server and client with max message size
             _server = new Server();
             _client = new Client();
+            
+            // Get local player name from Steam or fallback
+            _localPlayerName = SteamHelper.GetLocalPlayerName();
 
-            DebugLogger.Info("NetworkManager initialized with Telepathy");
+            DebugLogger.Info($"NetworkManager initialized - Player name: {_localPlayerName}");
         }
 
         /// <summary>
@@ -72,6 +104,10 @@ namespace AutonautsMP.Network
             {
                 if (_server.Start(port))
                 {
+                    // Create local player info for host
+                    _localPlayer = new PlayerInfo(-1, _localPlayerName, true);
+                    _players.Clear();
+                    
                     SetState(ConnectionState.Hosting);
                     DebugLogger.Info($"Server started on port {port}");
                     return true;
@@ -133,6 +169,11 @@ namespace AutonautsMP.Network
                 _client.Disconnect();
             }
 
+            _players.Clear();
+            _localPlayer = null;
+            _pendingPings.Clear();
+            _clientPing = 0;
+            
             SetState(ConnectionState.Disconnected);
             DebugLogger.Info("Disconnected");
         }
@@ -146,12 +187,40 @@ namespace AutonautsMP.Network
             if (_state == ConnectionState.Hosting)
             {
                 ProcessServerMessages();
+                UpdateServerPing();
             }
 
             // Process client messages
             if (_state == ConnectionState.Connecting || _state == ConnectionState.Connected)
             {
                 ProcessClientMessages();
+                UpdateClientPing();
+            }
+        }
+        
+        private void UpdateServerPing()
+        {
+            // Send ping to all clients periodically
+            if ((DateTime.UtcNow - _lastPingTime).TotalSeconds >= PING_INTERVAL)
+            {
+                _lastPingTime = DateTime.UtcNow;
+                
+                foreach (var clientId in _connectedClients)
+                {
+                    _pendingPings[clientId] = DateTime.UtcNow;
+                    SendTo(clientId, new byte[] { (byte)NetMessageType.Ping });
+                }
+            }
+        }
+        
+        private void UpdateClientPing()
+        {
+            // Client sends ping to server periodically
+            if (_state == ConnectionState.Connected && (DateTime.UtcNow - _lastPingTime).TotalSeconds >= PING_INTERVAL)
+            {
+                _lastPingTime = DateTime.UtcNow;
+                _pendingPings[0] = DateTime.UtcNow;
+                SendToServer(new byte[] { (byte)NetMessageType.Ping });
             }
         }
 
@@ -165,20 +234,76 @@ namespace AutonautsMP.Network
                     case EventType.Connected:
                         DebugLogger.Info($"Client {msg.connectionId} connected");
                         if (!_connectedClients.Contains(msg.connectionId))
+                        {
                             _connectedClients.Add(msg.connectionId);
+                            // Create placeholder player info until we get their name
+                            _players[msg.connectionId] = new PlayerInfo(msg.connectionId, $"Player {msg.connectionId}");
+                        }
                         OnPlayerConnected?.Invoke(msg.connectionId, $"Client {msg.connectionId}");
+                        OnPlayerListUpdated?.Invoke();
                         break;
 
                     case EventType.Data:
-                        OnDataReceived?.Invoke(msg.connectionId, msg.data);
+                        HandleServerData(msg.connectionId, msg.data);
                         break;
 
                     case EventType.Disconnected:
                         DebugLogger.Info($"Client {msg.connectionId} disconnected");
                         _connectedClients.Remove(msg.connectionId);
+                        _players.Remove(msg.connectionId);
+                        _pendingPings.Remove(msg.connectionId);
                         OnPlayerDisconnected?.Invoke(msg.connectionId);
+                        OnPlayerListUpdated?.Invoke();
                         break;
                 }
+            }
+        }
+        
+        private void HandleServerData(int clientId, byte[] data)
+        {
+            if (data == null || data.Length == 0) return;
+            
+            var msgType = (NetMessageType)data[0];
+            
+            switch (msgType)
+            {
+                case NetMessageType.PlayerInfo:
+                    // Client sent their player name
+                    if (data.Length > 1)
+                    {
+                        string playerName = Encoding.UTF8.GetString(data, 1, data.Length - 1);
+                        if (_players.ContainsKey(clientId))
+                        {
+                            _players[clientId].Name = playerName;
+                            DebugLogger.Info($"Player {clientId} name: {playerName}");
+                            OnPlayerListUpdated?.Invoke();
+                        }
+                    }
+                    break;
+                    
+                case NetMessageType.Ping:
+                    // Client is pinging us, send pong back
+                    SendTo(clientId, new byte[] { (byte)NetMessageType.Pong });
+                    break;
+                    
+                case NetMessageType.Pong:
+                    // Got pong response from client
+                    if (_pendingPings.TryGetValue(clientId, out DateTime pingTime))
+                    {
+                        int ping = (int)(DateTime.UtcNow - pingTime).TotalMilliseconds;
+                        if (_players.ContainsKey(clientId))
+                        {
+                            _players[clientId].Ping = ping;
+                            _players[clientId].LastPingTime = DateTime.UtcNow;
+                        }
+                        _pendingPings.Remove(clientId);
+                    }
+                    break;
+                    
+                default:
+                    // Other data - pass to event handlers
+                    OnDataReceived?.Invoke(clientId, data);
+                    break;
             }
         }
 
@@ -192,10 +317,16 @@ namespace AutonautsMP.Network
                     case EventType.Connected:
                         DebugLogger.Info("Connected to server!");
                         SetState(ConnectionState.Connected);
+                        
+                        // Create local player info
+                        _localPlayer = new PlayerInfo(0, _localPlayerName, false);
+                        
+                        // Send our player name to the server
+                        SendPlayerInfo();
                         break;
 
                     case EventType.Data:
-                        OnDataReceived?.Invoke(0, msg.data); // 0 = server
+                        HandleClientData(msg.data);
                         break;
 
                     case EventType.Disconnected:
@@ -212,6 +343,79 @@ namespace AutonautsMP.Network
                 SetState(ConnectionState.Disconnected);
                 OnError?.Invoke("Connection failed");
             }
+        }
+        
+        private void HandleClientData(byte[] data)
+        {
+            if (data == null || data.Length == 0) return;
+            
+            var msgType = (NetMessageType)data[0];
+            
+            switch (msgType)
+            {
+                case NetMessageType.Ping:
+                    // Server is pinging us, send pong back
+                    SendToServer(new byte[] { (byte)NetMessageType.Pong });
+                    break;
+                    
+                case NetMessageType.Pong:
+                    // Got pong response from server
+                    if (_pendingPings.TryGetValue(0, out DateTime pingTime))
+                    {
+                        _clientPing = (int)(DateTime.UtcNow - pingTime).TotalMilliseconds;
+                        if (_localPlayer != null)
+                        {
+                            _localPlayer.Ping = _clientPing;
+                        }
+                        _pendingPings.Remove(0);
+                    }
+                    break;
+                    
+                case NetMessageType.PlayerList:
+                    // Server sent updated player list (future feature)
+                    break;
+                    
+                default:
+                    // Other data - pass to event handlers
+                    OnDataReceived?.Invoke(0, data);
+                    break;
+            }
+        }
+        
+        /// <summary>
+        /// Send local player info to the server.
+        /// </summary>
+        private void SendPlayerInfo()
+        {
+            if (_state != ConnectionState.Connected) return;
+            
+            byte[] nameBytes = Encoding.UTF8.GetBytes(_localPlayerName);
+            byte[] data = new byte[1 + nameBytes.Length];
+            data[0] = (byte)NetMessageType.PlayerInfo;
+            Array.Copy(nameBytes, 0, data, 1, nameBytes.Length);
+            
+            SendToServer(data);
+            DebugLogger.Info($"Sent player info: {_localPlayerName}");
+        }
+        
+        /// <summary>
+        /// Get all players including the local player (for display purposes).
+        /// </summary>
+        public List<PlayerInfo> GetAllPlayers()
+        {
+            var allPlayers = new List<PlayerInfo>();
+            
+            if (_localPlayer != null)
+            {
+                allPlayers.Add(_localPlayer);
+            }
+            
+            foreach (var player in _players.Values)
+            {
+                allPlayers.Add(player);
+            }
+            
+            return allPlayers;
         }
 
         /// <summary>

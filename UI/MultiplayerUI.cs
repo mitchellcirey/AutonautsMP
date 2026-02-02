@@ -56,7 +56,7 @@ namespace AutonautsMP.UI
         
         // Layout constants
         private const float PANEL_WIDTH = 420f;
-        private const float PANEL_HEIGHT = 440f;
+        private const float PANEL_HEIGHT = 480f;
         
         // Animation
         private float _animationProgress = 0f;
@@ -176,6 +176,12 @@ namespace AutonautsMP.UI
         {
             // Initialize styles if needed (must be done in OnGUI)
             InitializeStyles();
+            
+            // Always show the connection HUD when connected (and main UI is closed)
+            if (!_showWindow && NetworkManager.Instance.IsConnected)
+            {
+                DrawConnectionHUD();
+            }
             
             // Always show toggle button (unless fullscreen UI is open)
             if (!_showWindow)
@@ -335,16 +341,181 @@ namespace AutonautsMP.UI
                 buttonHeight
             );
             
+            // Block clicks from going through the button
+            Event e = Event.current;
+            bool mouseOverButton = buttonRect.Contains(e.mousePosition);
+            
+            if (mouseOverButton && e.type == EventType.MouseDown && e.button == 0)
+            {
+                ToggleWindow();
+                e.Use();
+                return;
+            }
+            
+            // Consume any mouse events over the button area
+            if (mouseOverButton && e.isMouse)
+            {
+                e.Use();
+            }
+            
             // Draw button with custom style
             var originalColor = GUI.backgroundColor;
             GUI.backgroundColor = _primaryColor;
             
-            if (GUI.Button(buttonRect, "MP", _buttonStyle))
-            {
-                ToggleWindow();
-            }
+            GUI.Button(buttonRect, "MP", _buttonStyle);
             
             GUI.backgroundColor = originalColor;
+        }
+        
+        private void DrawConnectionHUD()
+        {
+            // Get all players
+            var allPlayers = NetworkManager.Instance.GetAllPlayers();
+            int playerCount = allPlayers.Count;
+            
+            // Calculate HUD size based on player count (show up to 4 players)
+            int displayCount = System.Math.Min(playerCount, 4);
+            float hudWidth = 220f;
+            float baseHeight = 45f;
+            float playerRowHeight = 18f;
+            float hudHeight = baseHeight + (displayCount * playerRowHeight);
+            if (playerCount > 4) hudHeight += 14f; // Extra row for "and X more"
+            
+            float hudX = (Screen.width - hudWidth) / 2f;
+            float hudY = 8f;
+            
+            Rect hudRect = new Rect(hudX, hudY, hudWidth, hudHeight);
+            
+            // Block all mouse events on HUD
+            Event e = Event.current;
+            if (hudRect.Contains(e.mousePosition) && e.isMouse)
+            {
+                e.Use();
+            }
+            
+            // Semi-transparent background
+            GUI.color = new Color(0, 0, 0, 0.8f);
+            GUI.DrawTexture(hudRect, _panelTexture);
+            
+            // Top border accent
+            GUI.color = _secondaryColor;
+            GUI.DrawTexture(new Rect(hudX, hudY, hudWidth, 2), _accentTexture);
+            GUI.color = Color.white;
+            
+            // Content
+            float padding = 10f;
+            float y = hudY + 8f;
+            float contentWidth = hudWidth - (padding * 2);
+            
+            // Header row: Status and player count
+            GUIStyle headerStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 11,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = _secondaryColor }
+            };
+            
+            string status = NetworkManager.Instance.IsHost ? "HOSTING" : "CONNECTED";
+            GUI.Label(new Rect(hudX + padding, y, 80, 16), status, headerStyle);
+            
+            // Player count on right
+            GUIStyle countStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 11,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleRight,
+                normal = { textColor = Color.white }
+            };
+            
+            string countText = playerCount == 1 ? "1 Player" : $"{playerCount} Players";
+            GUI.Label(new Rect(hudX + padding, y, contentWidth, 16), countText, countStyle);
+            y += 22f;
+            
+            // Separator line
+            GUI.color = new Color(1, 1, 1, 0.2f);
+            GUI.DrawTexture(new Rect(hudX + padding, y, contentWidth, 1), _panelTexture);
+            GUI.color = Color.white;
+            y += 6f;
+            
+            // Player list with names and ping
+            GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 11,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = Color.white }
+            };
+            
+            GUIStyle pingStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 10,
+                alignment = TextAnchor.MiddleRight,
+                normal = { textColor = new Color(0.6f, 0.6f, 0.65f) }
+            };
+            
+            GUIStyle hostTagStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 9,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = _accentColor }
+            };
+            
+            for (int i = 0; i < displayCount; i++)
+            {
+                var player = allPlayers[i];
+                
+                // Name (truncate if too long)
+                string displayName = player.Name;
+                if (displayName.Length > 16)
+                {
+                    displayName = displayName.Substring(0, 14) + "..";
+                }
+                
+                // Add host tag
+                if (player.IsHost)
+                {
+                    GUI.Label(new Rect(hudX + padding, y, 40, playerRowHeight), "[HOST]", hostTagStyle);
+                    GUI.Label(new Rect(hudX + padding + 42, y, contentWidth - 80, playerRowHeight), displayName, nameStyle);
+                }
+                else
+                {
+                    GUI.Label(new Rect(hudX + padding, y, contentWidth - 50, playerRowHeight), displayName, nameStyle);
+                }
+                
+                // Ping (don't show for host, show for clients)
+                if (!player.IsHost || !NetworkManager.Instance.IsHost)
+                {
+                    int ping = player.IsHost ? 0 : player.Ping;
+                    
+                    // Color code ping
+                    Color pingColor;
+                    if (ping < 50) pingColor = _secondaryColor;      // Green - good
+                    else if (ping < 100) pingColor = _accentColor;   // Orange - okay
+                    else pingColor = _dangerColor;                    // Red - bad
+                    
+                    pingStyle.normal.textColor = pingColor;
+                    
+                    string pingText = ping > 0 ? $"{ping}ms" : "--";
+                    GUI.Label(new Rect(hudX + padding, y, contentWidth, playerRowHeight), pingText, pingStyle);
+                }
+                
+                y += playerRowHeight;
+            }
+            
+            // Show "and X more" if there are more players
+            if (playerCount > 4)
+            {
+                GUIStyle moreStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 9,
+                    fontStyle = FontStyle.Italic,
+                    alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = new Color(0.5f, 0.5f, 0.55f) }
+                };
+                
+                GUI.Label(new Rect(hudX + padding, y, contentWidth, 14), $"and {playerCount - 4} more...", moreStyle);
+            }
         }
         
         private void DrawFullscreenUI()
@@ -476,37 +647,105 @@ namespace AutonautsMP.UI
             else
             {
                 // === Connected UI ===
+                var allPlayers = NetworkManager.Instance.GetAllPlayers();
+                int playerCount = allPlayers.Count;
                 
+                // Header
+                string headerText = NetworkManager.Instance.IsHost ? "HOSTING" : "CONNECTED";
+                GUI.Label(new Rect(padding, y, contentWidth / 2, 20), headerText, _labelStyle);
+                
+                // Player count on right
+                GUIStyle rightAlignLabel = new GUIStyle(_labelStyle) { alignment = TextAnchor.MiddleRight };
+                GUI.Label(new Rect(padding, y, contentWidth, 20), $"{playerCount} Players", rightAlignLabel);
+                y += 30;
+                
+                // Player list box
+                float listHeight = System.Math.Min(playerCount, 5) * 24f + 16f;
+                GUI.DrawTexture(new Rect(padding, y, contentWidth, listHeight), _inputTexture);
+                
+                // Player rows
+                float rowY = y + 8f;
+                GUIStyle playerNameStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 12,
+                    alignment = TextAnchor.MiddleLeft,
+                    normal = { textColor = Color.white }
+                };
+                GUIStyle pingDisplayStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 11,
+                    alignment = TextAnchor.MiddleRight
+                };
+                GUIStyle hostTag = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 9,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleLeft,
+                    normal = { textColor = _accentColor }
+                };
+                
+                int displayMax = System.Math.Min(playerCount, 5);
+                for (int i = 0; i < displayMax; i++)
+                {
+                    var player = allPlayers[i];
+                    
+                    // Name with host tag
+                    string displayName = player.Name;
+                    if (displayName.Length > 18) displayName = displayName.Substring(0, 16) + "..";
+                    
+                    if (player.IsHost)
+                    {
+                        GUI.Label(new Rect(padding + 8, rowY, 45, 20), "[HOST]", hostTag);
+                        GUI.Label(new Rect(padding + 55, rowY, contentWidth - 120, 20), displayName, playerNameStyle);
+                    }
+                    else
+                    {
+                        GUI.Label(new Rect(padding + 8, rowY, contentWidth - 80, 20), displayName, playerNameStyle);
+                    }
+                    
+                    // Ping (color coded)
+                    if (!player.IsHost || !NetworkManager.Instance.IsHost)
+                    {
+                        int ping = player.Ping;
+                        Color pingColor = ping < 50 ? _secondaryColor : (ping < 100 ? _accentColor : _dangerColor);
+                        pingDisplayStyle.normal.textColor = pingColor;
+                        string pingText = ping > 0 ? $"{ping}ms" : "--";
+                        GUI.Label(new Rect(padding + 8, rowY, contentWidth - 16, 20), pingText, pingDisplayStyle);
+                    }
+                    
+                    rowY += 24f;
+                }
+                
+                if (playerCount > 5)
+                {
+                    GUIStyle moreStyle = new GUIStyle(GUI.skin.label)
+                    {
+                        fontSize = 10,
+                        fontStyle = FontStyle.Italic,
+                        alignment = TextAnchor.MiddleCenter,
+                        normal = { textColor = new Color(0.5f, 0.5f, 0.55f) }
+                    };
+                    GUI.Label(new Rect(padding, rowY, contentWidth, 16), $"+ {playerCount - 5} more players", moreStyle);
+                }
+                
+                y += listHeight + 15;
+                
+                // Server info (if hosting)
                 if (NetworkManager.Instance.IsHost)
                 {
-                    // Hosting UI
-                    GUI.Label(new Rect(padding, y, contentWidth, 25), "PLAYERS ONLINE", _labelStyle);
-                    y += 35;
-                    
-                    // Big player count
-                    string playerCount = NetworkManager.Instance.ConnectedPlayerCount.ToString();
-                    GUI.Label(new Rect(padding, y, contentWidth, 50), playerCount, _playerCountStyle);
-                    y += 70;
-                    
-                    // Server info box
-                    GUI.DrawTexture(new Rect(padding, y, contentWidth, 60), _inputTexture);
-                    GUI.Label(new Rect(padding + 10, y + 5, contentWidth - 20, 25), 
-                        $"Port: {_port}", _labelStyle);
-                    GUI.Label(new Rect(padding + 10, y + 30, contentWidth - 20, 25), 
-                        "Share your IP with friends to join!", _subtitleStyle);
-                    y += 80;
+                    GUI.Label(new Rect(padding, y, contentWidth, 18), 
+                        $"Port: {_port} - Share your IP to let friends join!", _subtitleStyle);
+                    y += 25;
                 }
                 else
                 {
-                    // Client UI
-                    GUI.Label(new Rect(padding, y, contentWidth, 25), "CONNECTED TO SERVER", _labelStyle);
-                    y += 35;
-                    
-                    // Server info
-                    GUI.DrawTexture(new Rect(padding, y, contentWidth, 50), _inputTexture);
-                    GUI.Label(new Rect(padding + 10, y + 15, contentWidth - 20, 25), 
-                        $"{_ipAddress}:{_port}", _statusConnectedStyle);
-                    y += 70;
+                    // Show our ping to server
+                    int clientPing = NetworkManager.Instance.ClientPing;
+                    Color pingColor = clientPing < 50 ? _secondaryColor : (clientPing < 100 ? _accentColor : _dangerColor);
+                    GUIStyle pingInfoStyle = new GUIStyle(_subtitleStyle) { normal = { textColor = pingColor } };
+                    string pingInfo = clientPing > 0 ? $"Your ping: {clientPing}ms" : "Measuring ping...";
+                    GUI.Label(new Rect(padding, y, contentWidth, 18), pingInfo, pingInfoStyle);
+                    y += 25;
                 }
                 
                 // Disconnect button
