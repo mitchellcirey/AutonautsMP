@@ -3,5 +3,6 @@ obj/
 lib/
 dist/
 *.zip
+*.zip
 *.user
 .vs/
