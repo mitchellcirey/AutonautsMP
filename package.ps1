@@ -19,6 +19,7 @@ if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Path $dist | Out-Null
 
 Copy-Item "bin/Release/AutonautsMP.dll" "$dist/"
+Copy-Item "bin/Release/Telepathy.dll" "$dist/"
 Copy-Item "Installer/bin/Release/net8.0/win-x64/publish/AutonautsMP.Installer.exe" "$dist/"
 
 Write-Host "`nPackage created in: $((Resolve-Path $dist).Path)" -ForegroundColor Green

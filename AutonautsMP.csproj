@@ -13,7 +13,16 @@
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <Nullable>enable</Nullable>
+    <!-- Fix type forwarding issues -->
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+
+  <!-- Telepathy for Unity-compatible networking -->
+  <ItemGroup>
+    <PackageReference Include="Telepathy" Version="1.0.341" />
+  </ItemGroup>
+
 
   <ItemGroup>
     <Reference Include="0Harmony">

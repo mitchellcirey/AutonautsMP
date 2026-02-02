@@ -1,12 +1,12 @@
 using UnityEngine;
 using AutonautsMP.Core;
+using AutonautsMP.Network;
 
 namespace AutonautsMP.UI
 {
     /// <summary>
     /// Main multiplayer UI panel using Unity IMGUI.
-    /// Provides host/join interface for future networking features.
-    /// Designed for easy extension when network layer is implemented.
+    /// Provides host/join interface with full networking support.
     /// </summary>
     internal class MultiplayerUI : MonoBehaviour
     {
@@ -24,6 +24,7 @@ namespace AutonautsMP.UI
         private GUIStyle? _debugTextStyle;
         private GUIStyle? _titleStyle;
         private GUIStyle? _statusStyle;
+        private GUIStyle? _connectedStyle;
         private bool _stylesInitialized = false;
         
         private void Awake()
@@ -43,7 +44,68 @@ namespace AutonautsMP.UI
             _ipAddress = ModConfig.DefaultIP;
             _port = ModConfig.DefaultPort.ToString();
             
+            // Subscribe to network events
+            NetworkManager.Instance.OnStateChanged += OnNetworkStateChanged;
+            NetworkManager.Instance.OnPlayerConnected += OnPlayerConnected;
+            NetworkManager.Instance.OnPlayerDisconnected += OnPlayerDisconnected;
+            NetworkManager.Instance.OnError += OnNetworkError;
+            
             DebugLogger.Info("MultiplayerUI component initialized");
+        }
+        
+        private void OnDestroy()
+        {
+            // Unsubscribe from network events
+            if (NetworkManager.Instance != null)
+            {
+                NetworkManager.Instance.OnStateChanged -= OnNetworkStateChanged;
+                NetworkManager.Instance.OnPlayerConnected -= OnPlayerConnected;
+                NetworkManager.Instance.OnPlayerDisconnected -= OnPlayerDisconnected;
+                NetworkManager.Instance.OnError -= OnNetworkError;
+            }
+        }
+        
+        private void OnNetworkStateChanged(ConnectionState state)
+        {
+            switch (state)
+            {
+                case ConnectionState.Disconnected:
+                    _statusText = "Disconnected";
+                    break;
+                case ConnectionState.Connecting:
+                    _statusText = "Connecting...";
+                    break;
+                case ConnectionState.Connected:
+                    _statusText = "Connected to server!";
+                    break;
+                case ConnectionState.Hosting:
+                    _statusText = $"Hosting on port {_port}";
+                    break;
+            }
+        }
+        
+        private void OnPlayerConnected(int peerId, string address)
+        {
+            if (NetworkManager.Instance.IsHost)
+            {
+                _statusText = $"Hosting ({NetworkManager.Instance.ConnectedPlayerCount} players)";
+            }
+            DebugLogger.Info($"Player connected: {peerId} from {address}");
+        }
+        
+        private void OnPlayerDisconnected(int peerId)
+        {
+            if (NetworkManager.Instance.IsHost)
+            {
+                _statusText = $"Hosting ({NetworkManager.Instance.ConnectedPlayerCount} players)";
+            }
+            DebugLogger.Info($"Player disconnected: {peerId}");
+        }
+        
+        private void OnNetworkError(string error)
+        {
+            _statusText = $"Error: {error}";
+            DebugLogger.Error($"Network error: {error}");
         }
         
         private void Update()
@@ -106,6 +168,14 @@ namespace AutonautsMP.UI
                 normal = { textColor = Color.cyan }
             };
             
+            _connectedStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 12,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = Color.green }
+            };
+            
             _stylesInitialized = true;
         }
         
@@ -165,37 +235,63 @@ namespace AutonautsMP.UI
             GUI.Box(new Rect(padding, y, contentWidth, 2), "");
             y += 10;
             
-            // Status label
+            // Status label with color based on connection state
+            var statusStyle = NetworkManager.Instance.IsConnected ? _connectedStyle : _statusStyle;
             GUI.Label(
                 new Rect(padding, y, contentWidth, 20),
                 $"Status: {_statusText}",
-                _statusStyle
+                statusStyle
             );
             y += 30;
             
-            // IP Address field
-            GUI.Label(new Rect(padding, y, 80, 20), "IP Address:");
-            _ipAddress = GUI.TextField(new Rect(padding + 85, y, contentWidth - 85, 22), _ipAddress);
-            y += 30;
+            bool isConnected = NetworkManager.Instance.IsConnected;
             
-            // Port field
-            GUI.Label(new Rect(padding, y, 80, 20), "Port:");
-            _port = GUI.TextField(new Rect(padding + 85, y, 80, 22), _port);
-            y += 35;
-            
-            // Host Game button
-            if (GUI.Button(new Rect(padding, y, contentWidth, 35), "Host Game"))
+            // Only show IP/Port fields when not connected
+            if (!isConnected)
             {
-                OnHostGameClicked();
+                // IP Address field
+                GUI.Label(new Rect(padding, y, 80, 20), "IP Address:");
+                _ipAddress = GUI.TextField(new Rect(padding + 85, y, contentWidth - 85, 22), _ipAddress);
+                y += 30;
+                
+                // Port field
+                GUI.Label(new Rect(padding, y, 80, 20), "Port:");
+                _port = GUI.TextField(new Rect(padding + 85, y, 80, 22), _port);
+                y += 35;
+                
+                // Host Game button
+                if (GUI.Button(new Rect(padding, y, contentWidth, 35), "Host Game"))
+                {
+                    OnHostGameClicked();
+                }
+                y += 45;
+                
+                // Join Game button
+                if (GUI.Button(new Rect(padding, y, contentWidth, 35), "Join Game"))
+                {
+                    OnJoinGameClicked();
+                }
+                y += 55;
             }
-            y += 45;
-            
-            // Join Game button
-            if (GUI.Button(new Rect(padding, y, contentWidth, 35), "Join Game"))
+            else
             {
-                OnJoinGameClicked();
+                // Show connected player count for host
+                if (NetworkManager.Instance.IsHost)
+                {
+                    GUI.Label(
+                        new Rect(padding, y, contentWidth, 20),
+                        $"Players connected: {NetworkManager.Instance.ConnectedPlayerCount}"
+                    );
+                    y += 30;
+                }
+                
+                // Disconnect button
+                if (GUI.Button(new Rect(padding, y, contentWidth, 35), "Disconnect"))
+                {
+                    OnDisconnectClicked();
+                }
+                y += 55;
             }
-            y += 55;
             
             // Close button at bottom
             if (GUI.Button(new Rect(padding, _windowRect.height - 45, contentWidth, 30), "Close"))
@@ -226,28 +322,70 @@ namespace AutonautsMP.UI
         
         /// <summary>
         /// Called when Host Game button is clicked.
-        /// Logs debug message. Network implementation will be added later.
+        /// Starts hosting a game on the specified port.
         /// </summary>
         private void OnHostGameClicked()
         {
             DebugLogger.Info($"Host Game button clicked (Port: {_port})");
-            _statusText = "Host clicked - networking not implemented";
             
-            // TODO: Future network implementation
-            // NetworkService.Instance?.StartHost(int.Parse(_port));
+            if (!int.TryParse(_port, out int port) || port < 1 || port > 65535)
+            {
+                _statusText = "Invalid port number";
+                return;
+            }
+            
+            _statusText = "Starting server...";
+            
+            if (NetworkManager.Instance.StartHost(port))
+            {
+                DebugLogger.Info($"Server started successfully on port {port}");
+            }
+            else
+            {
+                _statusText = "Failed to start server";
+            }
         }
         
         /// <summary>
         /// Called when Join Game button is clicked.
-        /// Logs debug message. Network implementation will be added later.
+        /// Connects to a server at the specified IP and port.
         /// </summary>
         private void OnJoinGameClicked()
         {
             DebugLogger.Info($"Join Game button clicked (IP: {_ipAddress}, Port: {_port})");
-            _statusText = "Join clicked - networking not implemented";
             
-            // TODO: Future network implementation
-            // NetworkService.Instance?.JoinGame(_ipAddress, int.Parse(_port));
+            if (string.IsNullOrWhiteSpace(_ipAddress))
+            {
+                _statusText = "Please enter an IP address";
+                return;
+            }
+            
+            if (!int.TryParse(_port, out int port) || port < 1 || port > 65535)
+            {
+                _statusText = "Invalid port number";
+                return;
+            }
+            
+            _statusText = "Connecting...";
+            
+            if (NetworkManager.Instance.JoinGame(_ipAddress, port))
+            {
+                DebugLogger.Info($"Connecting to {_ipAddress}:{port}...");
+            }
+            else
+            {
+                _statusText = "Failed to connect";
+            }
+        }
+        
+        /// <summary>
+        /// Called when Disconnect button is clicked.
+        /// </summary>
+        private void OnDisconnectClicked()
+        {
+            DebugLogger.Info("Disconnect button clicked");
+            NetworkManager.Instance.Disconnect();
+            _statusText = "Disconnected";
         }
         
         /// <summary>

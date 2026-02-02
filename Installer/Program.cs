@@ -73,12 +73,33 @@ try
         return;
     }
     
-    // Copy directly to plugins folder (no subfolder - avoids some scanning issues)
+    // Copy mod DLL to plugins folder
     string destPath = Path.Combine(pluginsDir, "AutonautsMP.dll");
     File.Copy(modDll, destPath, overwrite: true);
     Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"  Installed to: {destPath}");
+    Console.WriteLine($"  Installed: {destPath}");
     Console.ResetColor();
+    
+    // Copy Telepathy.dll dependency (must be in same folder as mod DLL)
+    string? modDir = Path.GetDirectoryName(modDll);
+    if (modDir != null)
+    {
+        string telepathySource = Path.Combine(modDir, "Telepathy.dll");
+        if (File.Exists(telepathySource))
+        {
+            string telepathyDest = Path.Combine(pluginsDir, "Telepathy.dll");
+            File.Copy(telepathySource, telepathyDest, overwrite: true);
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"  Installed: {telepathyDest}");
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("  Warning: Telepathy.dll not found - networking may not work");
+            Console.ResetColor();
+        }
+    }
 
     // Clear cache to avoid stale data
     Console.WriteLine("\n[4/4] Clearing BepInEx cache...");
