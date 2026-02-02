@@ -117,7 +117,7 @@ namespace AutonautsMP.UI
         {
             GUI.Label(
                 new Rect(10, 10, 250, 25),
-                "Multiplayer Mod Loaded",
+                "AutonautsMP Loaded Successfully",
                 _debugTextStyle
             );
         }

@@ -4,8 +4,8 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <!-- Use netstandard2.0 for better compatibility with Unity -->
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- Target .NET Framework 4.7.2 for Unity compatibility -->
+    <TargetFramework>net472</TargetFramework>
     <LangVersion>8.0</LangVersion>
     <AssemblyName>AutonautsMP</AssemblyName>
     <RootNamespace>AutonautsMP</RootNamespace>

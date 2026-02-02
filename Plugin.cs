@@ -68,7 +68,7 @@ namespace AutonautsMP
 
             // Always show "Mod Loaded" text in top-left
             GUI.color = Color.green;
-            GUI.Label(new Rect(10, 10, 300, 25), "<b>Multiplayer Mod Loaded</b>");
+            GUI.Label(new Rect(10, 10, 300, 25), "<b>AutonautsMP Loaded Successfully</b>");
             GUI.color = Color.white;
 
             // Toggle button in top-right
