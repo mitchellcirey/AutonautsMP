@@ -5,10 +5,7 @@ Peer-to-peer multiplayer mod for Autonauts using BepInEx 5 and LiteNetLib.
 ## Features
 
 - **Host/Join Games** - One player hosts, others connect via IP:Port
-- **Player List** - See who's online with customizable usernames
-- **Real-time Farmer Sync** - See other players' farmers moving in your world
-- **Position Sync** - 10Hz position updates with interpolation
-- **World State Sync** - Share your world with joining players
+- **Simple UI** - Click the MP button (top-right) or press F10
 
 ## Quick Start
 
@@ -27,19 +24,15 @@ Then launch Autonauts and click the **MP** button (top-right) or press **F10**.
 ## How to Play Multiplayer
 
 ### As Host
-1. Load your save game
+1. Launch Autonauts
 2. Press F10 to open the multiplayer panel
-3. Enter your name and click "Host Game"
+3. Click "Host Game"
 4. Share your IP and port (default: 9050) with friends
 
 ### As Client
 1. Press F10 to open the multiplayer panel
-2. Enter your name
-3. Enter the host's IP and port
-4. Click "Join Game"
-
-### World Sync (Work in Progress)
-When you join a game, the host's recent save will be transferred. Load the "_multiplayer_sync" save from the main menu to enter the shared world.
+2. Enter the host's IP and port
+3. Click "Join Game"
 
 ## Architecture
 
@@ -47,7 +40,7 @@ The mod uses a split-assembly design to avoid Unity 2018's assembly scanning iss
 
 1. **AutonautsMP.dll** (net46) - Main BepInEx plugin
    - Installed to: `Autonauts\BepInEx\plugins\AutonautsMP\`
-   - Contains UI, FarmerSync, WorldSync
+   - Contains UI
    - Loaded at game startup
 
 2. **AutonautsMP.Network.dll** + **LiteNetLib.dll** (net471)
@@ -55,23 +48,6 @@ The mod uses a split-assembly design to avoid Unity 2018's assembly scanning iss
    - Contains all networking code
    - Loaded dynamically via reflection when you click Host/Join
    - Hidden from Unity's assembly scanner
-
-## Components
-
-- **MultiplayerUI** - IMGUI-based multiplayer panel
-- **FarmerSync** - Tracks local farmer position, renders remote farmers as ghosts
-- **WorldSync** - Handles world state capture and transfer
-- **NetworkBridge** - LiteNetLib wrapper with player tracking and packet handling
-
-## Packet Types
-
-| Type | Description |
-|------|-------------|
-| PlayerInfo | Player name and ID exchange on connect |
-| PlayerPosition | Real-time position/rotation sync (10Hz) |
-| PlayerList | Current player roster |
-| WorldStateChunk | Chunked world data for initial sync |
-| PlayerLeft | Disconnection notification |
 
 ## Controls
 
@@ -90,14 +66,11 @@ The build script automatically copies required DLLs from your game installation.
 
 ```
 AutonautsMP/
-├── Plugin.cs              # Main plugin entry point
-├── FarmerSync.cs          # Local/remote farmer synchronization
-├── WorldSync.cs           # World state transfer
+├── Plugin.cs              # Main plugin entry point and UI
 ├── AutonautsMP.csproj     # Main project (net46)
 ├── Network/
 │   └── Impl/
 │       ├── NetworkBridge.cs           # LiteNetLib wrapper
-│       ├── Packets.cs                 # Packet type definitions
 │       └── AutonautsMP.Network.csproj # Network project (net471)
 ├── Installer/
 │   └── Program.cs         # One-click installer
@@ -111,10 +84,6 @@ AutonautsMP/
 ### Can't connect?
 - Make sure the host's firewall allows UDP port 9050
 - For internet play, the host may need to port-forward 9050
-
-### Players not visible?
-- Make sure both players are in the same game world
-- Try saving and loading the "_multiplayer_sync" save
 
 ### Mod not loading?
 - Ensure BepInEx is installed correctly
