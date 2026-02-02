@@ -102,6 +102,9 @@ namespace AutonautsMP.Network
 
             try
             {
+                // Retry getting Steam name in case it wasn't ready during initialization
+                RefreshPlayerName();
+                
                 if (_server.Start(port))
                 {
                     // Create local player info for host
@@ -126,6 +129,29 @@ namespace AutonautsMP.Network
                 return false;
             }
         }
+        
+        /// <summary>
+        /// Refresh the local player name from Steam.
+        /// Called when connecting to retry in case Steam wasn't ready initially.
+        /// </summary>
+        private void RefreshPlayerName()
+        {
+            // If we already have a Steam name (not a fallback), don't retry
+            if (SteamHelper.IsSteamAvailable)
+            {
+                return;
+            }
+            
+            // Try to reinitialize Steam - it might be ready now
+            SteamHelper.Reinitialize();
+            string newName = SteamHelper.GetLocalPlayerName();
+            
+            if (newName != _localPlayerName)
+            {
+                DebugLogger.Info($"Updated player name from '{_localPlayerName}' to '{newName}'");
+                _localPlayerName = newName;
+            }
+        }
 
         /// <summary>
         /// Join a game at the specified IP and port.
@@ -140,6 +166,9 @@ namespace AutonautsMP.Network
 
             try
             {
+                // Retry getting Steam name in case it wasn't ready during initialization
+                RefreshPlayerName();
+                
                 SetState(ConnectionState.Connecting);
                 _client.Connect(ip, port);
                 DebugLogger.Info($"Connecting to {ip}:{port}...");

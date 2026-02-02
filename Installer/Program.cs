@@ -146,7 +146,32 @@ try
     Console.WriteLine("╚══════════════════════════════════════════════════════╝");
     Console.ResetColor();
     Console.WriteLine();
-    Console.WriteLine("Launch Autonauts and press F10 or click 'MP' button!");
+    Console.WriteLine("Press F10 or click 'MP' button in-game to open multiplayer!");
+    Console.WriteLine();
+    
+    // Ask if user wants to launch the game
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.Write("Would you like to launch Autonauts now? [Y/N]: ");
+    Console.ResetColor();
+    
+    while (true)
+    {
+        var key = Console.ReadKey(true).Key;
+        if (key == ConsoleKey.Y)
+        {
+            Console.WriteLine("Y");
+            Console.WriteLine();
+            Console.WriteLine("Launching Autonauts...");
+            LaunchGame(gamePath);
+            break;
+        }
+        else if (key == ConsoleKey.N)
+        {
+            Console.WriteLine("N");
+            break;
+        }
+    }
+    
     Console.WriteLine();
 }
 catch (Exception ex)
@@ -385,5 +410,38 @@ void WaitForGameToClose()
         dots++;
         
         Thread.Sleep(500);
+    }
+}
+
+void LaunchGame(string gamePath)
+{
+    try
+    {
+        string exePath = Path.Combine(gamePath, "Autonauts.exe");
+        if (File.Exists(exePath))
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = exePath,
+                WorkingDirectory = gamePath,
+                UseShellExecute = true
+            };
+            Process.Start(startInfo);
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("  Game launched successfully!");
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"  Could not find Autonauts.exe at: {exePath}");
+            Console.ResetColor();
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"  Failed to launch game: {ex.Message}");
+        Console.ResetColor();
     }
 }

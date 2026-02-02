@@ -31,6 +31,11 @@ namespace AutonautsMP.UI
         private Texture2D _closeButtonTexture;
         private Texture2D _closeButtonHoverTexture;
         
+        // MP Button textures (circular design)
+        private Texture2D _mpButtonTexture;
+        private Texture2D _mpButtonHoverTexture;
+        private Texture2D _mpButtonGlowTexture;
+        
         // Styles
         private GUIStyle _titleStyle;
         private GUIStyle _subtitleStyle;
@@ -61,6 +66,8 @@ namespace AutonautsMP.UI
         // Animation
         private float _animationProgress = 0f;
         private float _pulseTime = 0f;
+        private float _mpButtonHoverAnim = 0f;
+        private bool _mpButtonHovered = false;
         
         private void Awake()
         {
@@ -91,6 +98,9 @@ namespace AutonautsMP.UI
             if (_accentTexture != null) Destroy(_accentTexture);
             if (_closeButtonTexture != null) Destroy(_closeButtonTexture);
             if (_closeButtonHoverTexture != null) Destroy(_closeButtonHoverTexture);
+            if (_mpButtonTexture != null) Destroy(_mpButtonTexture);
+            if (_mpButtonHoverTexture != null) Destroy(_mpButtonHoverTexture);
+            if (_mpButtonGlowTexture != null) Destroy(_mpButtonGlowTexture);
             
             // Unsubscribe from network events
             if (NetworkManager.Instance != null)
@@ -169,6 +179,10 @@ namespace AutonautsMP.UI
                 _animationProgress = Mathf.Max(0f, _animationProgress - Time.unscaledDeltaTime * 8f);
             }
             
+            // MP button hover animation
+            float targetHover = _mpButtonHovered ? 1f : 0f;
+            _mpButtonHoverAnim = Mathf.Lerp(_mpButtonHoverAnim, targetHover, Time.unscaledDeltaTime * 10f);
+            
             _pulseTime += Time.unscaledDeltaTime;
         }
         
@@ -212,6 +226,11 @@ namespace AutonautsMP.UI
             _accentTexture = MakeTexture(2, 2, _accentColor);
             _closeButtonTexture = MakeTexture(2, 2, new Color(0.4f, 0.4f, 0.45f));
             _closeButtonHoverTexture = MakeTexture(2, 2, _dangerColor);
+            
+            // Create circular MP button textures
+            _mpButtonTexture = MakeCircularTexture(64, _primaryColor, 0.15f);
+            _mpButtonHoverTexture = MakeCircularTexture(64, _accentColor, 0.2f);
+            _mpButtonGlowTexture = MakeGlowTexture(80, _primaryColor);
             
             // Title style - large and prominent
             _titleStyle = new GUIStyle(GUI.skin.label)
@@ -328,43 +347,186 @@ namespace AutonautsMP.UI
             return tex;
         }
         
+        /// <summary>
+        /// Create a circular texture with a ring/outline design.
+        /// </summary>
+        private Texture2D MakeCircularTexture(int size, Color ringColor, float bgAlpha)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.ARGB32, false);
+            float center = size / 2f;
+            float outerRadius = size / 2f - 2f;
+            float innerRadius = outerRadius - 4f;
+            
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - center;
+                    float dy = y - center;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    
+                    if (dist <= outerRadius)
+                    {
+                        if (dist >= innerRadius)
+                        {
+                            // Ring area - solid color with slight gradient
+                            float ringPos = (dist - innerRadius) / (outerRadius - innerRadius);
+                            float alpha = 1f - Mathf.Abs(ringPos - 0.5f) * 0.3f;
+                            tex.SetPixel(x, y, new Color(ringColor.r, ringColor.g, ringColor.b, alpha));
+                        }
+                        else
+                        {
+                            // Inner area - semi-transparent background
+                            tex.SetPixel(x, y, new Color(0.1f, 0.1f, 0.15f, bgAlpha));
+                        }
+                    }
+                    else
+                    {
+                        // Outside - fully transparent
+                        tex.SetPixel(x, y, Color.clear);
+                    }
+                }
+            }
+            
+            tex.Apply();
+            tex.filterMode = FilterMode.Bilinear;
+            return tex;
+        }
+        
+        /// <summary>
+        /// Create a soft glow texture for hover effect.
+        /// </summary>
+        private Texture2D MakeGlowTexture(int size, Color glowColor)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.ARGB32, false);
+            float center = size / 2f;
+            float radius = size / 2f;
+            
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - center;
+                    float dy = y - center;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    
+                    if (dist <= radius)
+                    {
+                        // Soft falloff from center
+                        float alpha = 1f - (dist / radius);
+                        alpha = alpha * alpha * 0.4f; // Quadratic falloff, max 40% opacity
+                        tex.SetPixel(x, y, new Color(glowColor.r, glowColor.g, glowColor.b, alpha));
+                    }
+                    else
+                    {
+                        tex.SetPixel(x, y, Color.clear);
+                    }
+                }
+            }
+            
+            tex.Apply();
+            tex.filterMode = FilterMode.Bilinear;
+            return tex;
+        }
+        
         private void DrawToggleButton()
         {
-            float buttonWidth = 50;
-            float buttonHeight = 50;
-            float margin = 15;
+            float buttonSize = 52f;
+            float glowSize = 70f;
+            float margin = 12f;
             
-            Rect buttonRect = new Rect(
-                Screen.width - buttonWidth - margin,
-                margin,
-                buttonWidth,
-                buttonHeight
-            );
+            // Button position (top right)
+            float buttonX = Screen.width - buttonSize - margin;
+            float buttonY = margin;
+            Rect buttonRect = new Rect(buttonX, buttonY, buttonSize, buttonSize);
             
-            // Block clicks from going through the button
+            // Larger hit area for easier clicking
+            Rect hitRect = new Rect(buttonX - 5, buttonY - 5, buttonSize + 10, buttonSize + 10);
+            
+            // Check hover state
             Event e = Event.current;
-            bool mouseOverButton = buttonRect.Contains(e.mousePosition);
+            bool mouseOverButton = hitRect.Contains(e.mousePosition);
+            _mpButtonHovered = mouseOverButton;
             
-            if (mouseOverButton && e.type == EventType.MouseDown && e.button == 0)
+            if (mouseOverButton)
             {
-                ToggleWindow();
-                e.Use();
-                return;
+                // Handle click to toggle window
+                if (e.type == EventType.MouseDown && e.button == 0)
+                {
+                    ToggleWindow();
+                    e.Use();
+                    return;
+                }
+                
+                // Consume ALL input events over the button (mouse, scroll)
+                if (e.isMouse || e.isScrollWheel)
+                {
+                    e.Use();
+                }
             }
             
-            // Consume any mouse events over the button area
-            if (mouseOverButton && e.isMouse)
+            // Calculate glow rect (centered on button)
+            float glowOffset = (glowSize - buttonSize) / 2f;
+            Rect glowRect = new Rect(buttonX - glowOffset, buttonY - glowOffset, glowSize, glowSize);
+            
+            // Draw glow effect (animated on hover)
+            if (_mpButtonHoverAnim > 0.01f)
             {
-                e.Use();
+                GUI.color = new Color(1f, 1f, 1f, _mpButtonHoverAnim * 0.8f);
+                GUI.DrawTexture(glowRect, _mpButtonGlowTexture);
             }
             
-            // Draw button with custom style
-            var originalColor = GUI.backgroundColor;
-            GUI.backgroundColor = _primaryColor;
+            // Draw the circular button (blend between normal and hover texture)
+            GUI.color = Color.white;
             
-            GUI.Button(buttonRect, "MP", _buttonStyle);
+            // Slight scale animation on hover
+            float scale = 1f + (_mpButtonHoverAnim * 0.08f);
+            float scaledSize = buttonSize * scale;
+            float scaleOffset = (scaledSize - buttonSize) / 2f;
+            Rect scaledRect = new Rect(buttonX - scaleOffset, buttonY - scaleOffset, scaledSize, scaledSize);
             
-            GUI.backgroundColor = originalColor;
+            // Draw button texture
+            if (_mpButtonHoverAnim > 0.5f)
+            {
+                GUI.DrawTexture(scaledRect, _mpButtonHoverTexture);
+            }
+            else
+            {
+                GUI.DrawTexture(scaledRect, _mpButtonTexture);
+            }
+            
+            // Draw "AMP" text with style
+            GUIStyle mpTextStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 14,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = Color.white }
+            };
+            
+            // Slight color shift on hover
+            if (_mpButtonHoverAnim > 0.3f)
+            {
+                mpTextStyle.normal.textColor = _accentColor;
+            }
+            
+            GUI.Label(scaledRect, "AMP", mpTextStyle);
+            
+            // Draw a subtle pulsing dot when connected (bottom right of button)
+            if (NetworkManager.Instance.IsConnected)
+            {
+                float dotSize = 10f;
+                float pulse = (Mathf.Sin(_pulseTime * 3f) + 1f) / 2f * 0.3f + 0.7f;
+                Rect dotRect = new Rect(
+                    buttonX + buttonSize - dotSize - 2,
+                    buttonY + buttonSize - dotSize - 2,
+                    dotSize, dotSize
+                );
+                
+                GUI.color = new Color(_secondaryColor.r, _secondaryColor.g, _secondaryColor.b, pulse);
+                GUI.DrawTexture(dotRect, _accentTexture);
+                GUI.color = Color.white;
+            }
         }
         
         private void DrawConnectionHUD()
@@ -386,9 +548,9 @@ namespace AutonautsMP.UI
             
             Rect hudRect = new Rect(hudX, hudY, hudWidth, hudHeight);
             
-            // Block all mouse events on HUD
+            // Block all input events on HUD (mouse and scroll wheel)
             Event e = Event.current;
-            if (hudRect.Contains(e.mousePosition) && e.isMouse)
+            if (hudRect.Contains(e.mousePosition) && (e.isMouse || e.isScrollWheel))
             {
                 e.Use();
             }
@@ -531,27 +693,9 @@ namespace AutonautsMP.UI
             float panelY = (Screen.height - panelH) / 2f;
             Rect panelRect = new Rect(panelX, panelY, panelW, panelH);
             
-            // Fullscreen overlay - blocks all input to game
+            // Fullscreen overlay texture
             GUI.color = new Color(1, 1, 1, alpha);
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), _overlayTexture);
-            
-            // Handle clicks - only close if clicking OUTSIDE the panel
-            Event e = Event.current;
-            if (e.type == EventType.MouseDown && e.button == 0)
-            {
-                if (!panelRect.Contains(e.mousePosition))
-                {
-                    // Clicked outside panel - close
-                    _showWindow = false;
-                    e.Use();
-                }
-            }
-            
-            // Block all mouse events from reaching the game
-            if (e.isMouse)
-            {
-                // Consume the event so game doesn't receive it
-            }
             
             // Draw panel border (glow effect)
             float borderSize = 3;
@@ -559,17 +703,42 @@ namespace AutonautsMP.UI
             GUI.DrawTexture(new Rect(panelRect.x - borderSize, panelRect.y - borderSize, 
                 panelRect.width + borderSize * 2, panelRect.height + borderSize * 2), _panelBorderTexture);
             
-            // Draw main panel
+            // Draw main panel background
             GUI.color = new Color(1, 1, 1, alpha);
             GUI.DrawTexture(panelRect, _panelTexture);
             
-            // Draw panel contents
+            // Draw panel contents - buttons inside will receive events normally
             GUILayout.BeginArea(panelRect);
             DrawPanelContents();
             GUILayout.EndArea();
             
             // Reset color
             GUI.color = Color.white;
+            
+            // NOW handle input blocking AFTER the UI has been drawn
+            // This ensures UI buttons get their events first
+            Event e = Event.current;
+            bool isInsidePanel = panelRect.Contains(e.mousePosition);
+            
+            // Click outside panel to close
+            if (e.type == EventType.MouseDown && e.button == 0 && !isInsidePanel)
+            {
+                _showWindow = false;
+                e.Use();
+                return;
+            }
+            
+            // Block all remaining mouse events outside the panel
+            if (!isInsidePanel && e.isMouse)
+            {
+                e.Use();
+            }
+            
+            // Block scroll wheel everywhere (including inside panel - we don't need it)
+            if (e.isScrollWheel)
+            {
+                e.Use();
+            }
         }
         
         private void DrawPanelContents()
