@@ -154,17 +154,30 @@ namespace AutonautsMP.Core
             if (_initialized) return;
             _initialized = true;
             
-            // Settings file goes in BepInEx/config/AutonautsMP/
-            string configDir = Path.Combine(BepInEx.Paths.ConfigPath, "AutonautsMP");
-            if (!Directory.Exists(configDir))
+            try
             {
-                Directory.CreateDirectory(configDir);
+                // Settings file goes in BepInEx/config/AutonautsMP/
+                string configPath = BepInEx.Paths.ConfigPath;
+                DebugLogger.Info($"UserSettings: BepInEx config path = {configPath}");
+                
+                string configDir = Path.Combine(configPath, "AutonautsMP");
+                DebugLogger.Info($"UserSettings: Target directory = {configDir}");
+                
+                if (!Directory.Exists(configDir))
+                {
+                    DebugLogger.Info($"UserSettings: Creating directory...");
+                    Directory.CreateDirectory(configDir);
+                }
+                
+                _settingsPath = Path.Combine(configDir, "user.json");
+                DebugLogger.Info($"UserSettings: Settings file = {_settingsPath}");
+                
+                Load();
             }
-            
-            _settingsPath = Path.Combine(configDir, "user.json");
-            Load();
-            
-            DebugLogger.Info($"UserSettings initialized: {_settingsPath}");
+            catch (Exception ex)
+            {
+                DebugLogger.Error($"UserSettings: Failed to initialize: {ex}");
+            }
         }
         
         /// <summary>
@@ -176,20 +189,21 @@ namespace AutonautsMP.Core
             {
                 if (File.Exists(_settingsPath))
                 {
+                    DebugLogger.Info($"UserSettings: Loading existing file...");
                     string json = File.ReadAllText(_settingsPath);
                     _data = UserSettingsData.FromJson(json);
-                    DebugLogger.Info($"Loaded user settings - Last server: {_data.LastIP}:{_data.LastPort}");
+                    DebugLogger.Info($"UserSettings: Loaded - Last server: {_data.LastIP}:{_data.LastPort}");
                 }
                 else
                 {
+                    DebugLogger.Info($"UserSettings: File doesn't exist, creating default...");
                     _data = new UserSettingsData();
                     Save(); // Create default file
-                    DebugLogger.Info("Created default user settings");
                 }
             }
             catch (Exception ex)
             {
-                DebugLogger.Warning($"Failed to load user settings: {ex.Message}");
+                DebugLogger.Error($"UserSettings: Failed to load: {ex}");
                 _data = new UserSettingsData();
             }
         }
@@ -201,13 +215,20 @@ namespace AutonautsMP.Core
         {
             try
             {
+                if (string.IsNullOrEmpty(_settingsPath))
+                {
+                    DebugLogger.Warning("UserSettings: Cannot save - path not set");
+                    return;
+                }
+                
                 string json = _data.ToJson();
+                DebugLogger.Info($"UserSettings: Saving to {_settingsPath}");
                 File.WriteAllText(_settingsPath, json);
-                DebugLogger.Debug("User settings saved");
+                DebugLogger.Info("UserSettings: Saved successfully");
             }
             catch (Exception ex)
             {
-                DebugLogger.Warning($"Failed to save user settings: {ex.Message}");
+                DebugLogger.Error($"UserSettings: Failed to save: {ex}");
             }
         }
         

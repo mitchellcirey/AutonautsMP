@@ -23,6 +23,9 @@ namespace AutonautsMP
 
         private void Awake()
         {
+            // Initialize debug logger first so we can log everything
+            DebugLogger.Initialize(Logger);
+            
             // Initialize configuration
             ModConfig.Initialize(Config);
             
