@@ -61,7 +61,7 @@ namespace AutonautsMP.UI
         
         // Layout constants
         private const float PANEL_WIDTH = 420f;
-        private const float PANEL_HEIGHT = 480f;
+        private const float PANEL_HEIGHT = 520f;
         
         // Animation
         private float _animationProgress = 0f;
@@ -71,9 +71,9 @@ namespace AutonautsMP.UI
         
         private void Awake()
         {
-            // Initialize field defaults from config
-            _ipAddress = ModConfig.DefaultIP;
-            _port = ModConfig.DefaultPort.ToString();
+            // Initialize field defaults from user settings (last used values)
+            _ipAddress = UserSettings.LastIP;
+            _port = UserSettings.LastPort.ToString();
             
             // Subscribe to network events
             NetworkManager.Instance.OnStateChanged += OnNetworkStateChanged;
@@ -785,6 +785,47 @@ namespace AutonautsMP.UI
             {
                 // === Not Connected UI ===
                 
+                // Recent Servers (if any)
+                var recentServers = UserSettings.RecentServers;
+                if (recentServers.Count > 0)
+                {
+                    GUI.Label(new Rect(padding, y, contentWidth, 18), "RECENT SERVERS", _labelStyle);
+                    y += 22;
+                    
+                    // Style for recent server buttons
+                    GUIStyle recentStyle = new GUIStyle(GUI.skin.button)
+                    {
+                        fontSize = 11,
+                        alignment = TextAnchor.MiddleLeft,
+                        padding = new RectOffset(10, 10, 5, 5),
+                        normal = { background = _inputTexture, textColor = Color.white },
+                        hover = { background = _buttonHoverTexture, textColor = Color.white },
+                        active = { background = _buttonActiveTexture, textColor = Color.white }
+                    };
+                    
+                    // Show up to 3 recent servers as buttons
+                    int showCount = System.Math.Min(recentServers.Count, 3);
+                    float buttonWidth = (contentWidth - 10 * (showCount - 1)) / showCount;
+                    
+                    for (int i = 0; i < showCount; i++)
+                    {
+                        string server = recentServers[i];
+                        Rect btnRect = new Rect(padding + i * (buttonWidth + 10), y, buttonWidth, 28);
+                        
+                        if (GUI.Button(btnRect, server, recentStyle))
+                        {
+                            // Parse and fill in the IP:Port
+                            string[] parts = server.Split(':');
+                            if (parts.Length == 2)
+                            {
+                                _ipAddress = parts[0];
+                                _port = parts[1];
+                            }
+                        }
+                    }
+                    y += 38;
+                }
+                
                 // IP Address field
                 GUI.Label(new Rect(padding, y, contentWidth, 20), "SERVER IP ADDRESS", _labelStyle);
                 y += 25;
@@ -960,6 +1001,9 @@ namespace AutonautsMP.UI
             
             if (NetworkManager.Instance.StartHost(port))
             {
+                // Save port to settings
+                UserSettings.LastPort = port;
+                UserSettings.Save();
                 DebugLogger.Info($"Server started successfully on port {port}");
             }
             else
@@ -988,6 +1032,8 @@ namespace AutonautsMP.UI
             
             if (NetworkManager.Instance.JoinGame(_ipAddress, port))
             {
+                // Save server to recent servers
+                UserSettings.AddRecentServer(_ipAddress, port);
                 DebugLogger.Info($"Connecting to {_ipAddress}:{port}...");
             }
             else

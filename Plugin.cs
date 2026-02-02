@@ -25,6 +25,9 @@ namespace AutonautsMP
         {
             // Initialize configuration
             ModConfig.Initialize(Config);
+            
+            // Initialize user settings (for saved servers, etc.)
+            UserSettings.Initialize();
 
             // Log startup
             Logger.LogInfo("================================================");
