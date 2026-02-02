@@ -1,6 +1,0 @@
-using System.Reflection;
-using System.Runtime.Versioning;
-
-[assembly: AssemblyTitle("AutonautsMP.Network")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: TargetFramework(".NETStandard,Version=v2.0")]

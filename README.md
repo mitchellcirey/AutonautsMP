@@ -1,90 +1,33 @@
 # AutonautsMP
 
-Peer-to-peer multiplayer mod for Autonauts using BepInEx 5 and LiteNetLib.
+Multiplayer mod for Autonauts using BepInEx 5.
 
-## Features
+## Phase 1: Mod Scaffold
 
-- **Host/Join Games** - One player hosts, others connect via IP:Port
-- **Simple UI** - Click the MP button (top-right) or press F10
+This is a minimal implementation to verify mod injection works.
 
-## Quick Start
+## Building
 
 ```powershell
-.\build.ps1    # Build the mod
-.\install.ps1  # Install to game
+dotnet build -c Release
 ```
 
-Or use the one-click installer:
-```powershell
-.\package.ps1  # Creates dist/ folder with installer
-```
+Output: `bin/Release/AutonautsMP.dll`
 
-Then launch Autonauts and click the **MP** button (top-right) or press **F10**.
+## Installation
 
-## How to Play Multiplayer
+1. Install BepInEx 5.x in Autonauts folder
+2. Copy `AutonautsMP.dll` to `Autonauts/BepInEx/plugins/`
+3. Launch game
 
-### As Host
-1. Launch Autonauts
-2. Press F10 to open the multiplayer panel
-3. Click "Host Game"
-4. Share your IP and port (default: 9050) with friends
+## Usage
 
-### As Client
-1. Press F10 to open the multiplayer panel
-2. Enter the host's IP and port
-3. Click "Join Game"
-
-## Architecture
-
-The mod uses a split-assembly design to avoid Unity 2018's assembly scanning issues:
-
-1. **AutonautsMP.dll** (net46) - Main BepInEx plugin
-   - Installed to: `Autonauts\BepInEx\plugins\AutonautsMP\`
-   - Contains UI
-   - Loaded at game startup
-
-2. **AutonautsMP.Network.dll** + **LiteNetLib.dll** (net471)
-   - Installed to: `%APPDATA%\AutonautsMP\`
-   - Contains all networking code
-   - Loaded dynamically via reflection when you click Host/Join
-   - Hidden from Unity's assembly scanner
-
-## Controls
-
-- **F10** - Toggle multiplayer panel
-- **MP Button** (top-right) - Toggle multiplayer panel
-
-## Building from Source
-
-Requirements:
-- .NET SDK 6.0+
-- Autonauts with BepInEx 5 installed
-
-The build script automatically copies required DLLs from your game installation.
-
-## Files
-
-```
-AutonautsMP/
-├── Plugin.cs              # Main plugin entry point and UI
-├── AutonautsMP.csproj     # Main project (net46)
-├── Network/
-│   └── Impl/
-│       ├── NetworkBridge.cs           # LiteNetLib wrapper
-│       └── AutonautsMP.Network.csproj # Network project (net471)
-├── Installer/
-│   └── Program.cs         # One-click installer
-├── build.ps1              # Build script
-├── install.ps1            # Install script
-└── package.ps1            # Create distributable
-```
+- Press **F10** or click **MP** button (top-right) to open panel
+- "Multiplayer Mod Loaded" text confirms injection worked
 
 ## Troubleshooting
 
-### Can't connect?
-- Make sure the host's firewall allows UDP port 9050
-- For internet play, the host may need to port-forward 9050
-
-### Mod not loading?
-- Ensure BepInEx is installed correctly
-- Check `BepInEx/LogOutput.log` for errors
+If you get `ReflectionTypeLoadException`, ensure:
+1. BepInEx 5.4.22 is installed (NOT version 6)
+2. The mod DLL is in `BepInEx/plugins/` (not a subfolder)
+3. Delete `BepInEx/cache/` folder and restart
