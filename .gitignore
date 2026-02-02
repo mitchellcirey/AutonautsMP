@@ -2,5 +2,6 @@ bin/
 obj/
 lib/
 dist/
+*.zip
 *.user
 .vs/
