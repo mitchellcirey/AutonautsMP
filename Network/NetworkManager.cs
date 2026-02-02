@@ -46,7 +46,7 @@ namespace AutonautsMP.Network
         public bool IsHost => _state == ConnectionState.Hosting;
         public bool IsClient => _state == ConnectionState.Connected;
         public bool IsConnected => _state == ConnectionState.Connected || _state == ConnectionState.Hosting;
-        public int ConnectedPlayerCount => _connectedClients.Count;
+        public int ConnectedPlayerCount => IsHost ? _connectedClients.Count + 1 : _connectedClients.Count;
 
         private NetworkManager()
         {

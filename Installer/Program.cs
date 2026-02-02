@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
@@ -10,8 +11,12 @@ PrintBanner();
 
 try
 {
+    // Close game if running
+    Console.WriteLine("[1/5] Checking if Autonauts is running...");
+    CloseGameIfRunning();
+
     // Find game
-    Console.WriteLine("[1/4] Locating Autonauts...");
+    Console.WriteLine("\n[2/5] Locating Autonauts...");
     string? gamePath = FindGamePath();
     
     if (gamePath == null)
@@ -38,7 +43,7 @@ try
     Console.ResetColor();
 
     // Check/Install BepInEx
-    Console.WriteLine("\n[2/4] Checking BepInEx...");
+    Console.WriteLine("\n[3/5] Checking BepInEx...");
     string bepinexCore = Path.Combine(gamePath, "BepInEx", "core");
     string winhttp = Path.Combine(gamePath, "winhttp.dll");
     
@@ -57,12 +62,26 @@ try
         Console.ResetColor();
     }
 
-    // Install mod - directly into plugins folder (NOT a subfolder)
-    Console.WriteLine("\n[3/4] Installing AutonautsMP...");
-    string pluginsDir = Path.Combine(gamePath, "BepInEx", "plugins");
-    Directory.CreateDirectory(pluginsDir);
+    // Install mod into plugins/AutonautsMP subfolder
+    Console.WriteLine("\n[4/5] Installing AutonautsMP...");
+    string modDir = Path.Combine(gamePath, "BepInEx", "plugins", "AutonautsMP");
+    
+    // Create the AutonautsMP folder if it doesn't exist
+    if (!Directory.Exists(modDir))
+    {
+        Console.WriteLine($"  Creating folder: {modDir}");
+        Directory.CreateDirectory(modDir);
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("  Folder created!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.WriteLine($"  Folder exists: {modDir}");
+    }
     
     // Find mod DLL
+    Console.WriteLine("  Locating mod files...");
     string? modDll = FindModDll();
     if (modDll == null)
     {
@@ -72,22 +91,25 @@ try
         WaitAndExit(1);
         return;
     }
+    Console.WriteLine($"  Found: {modDll}");
     
-    // Copy mod DLL to plugins folder
-    string destPath = Path.Combine(pluginsDir, "AutonautsMP.dll");
+    // Copy mod DLL to plugins/AutonautsMP folder
+    Console.WriteLine("  Copying AutonautsMP.dll...");
+    string destPath = Path.Combine(modDir, "AutonautsMP.dll");
     File.Copy(modDll, destPath, overwrite: true);
     Console.ForegroundColor = ConsoleColor.Green;
     Console.WriteLine($"  Installed: {destPath}");
     Console.ResetColor();
     
     // Copy Telepathy.dll dependency (must be in same folder as mod DLL)
-    string? modDir = Path.GetDirectoryName(modDll);
-    if (modDir != null)
+    string? sourceDirPath = Path.GetDirectoryName(modDll);
+    if (sourceDirPath != null)
     {
-        string telepathySource = Path.Combine(modDir, "Telepathy.dll");
+        string telepathySource = Path.Combine(sourceDirPath, "Telepathy.dll");
         if (File.Exists(telepathySource))
         {
-            string telepathyDest = Path.Combine(pluginsDir, "Telepathy.dll");
+            Console.WriteLine("  Copying Telepathy.dll...");
+            string telepathyDest = Path.Combine(modDir, "Telepathy.dll");
             File.Copy(telepathySource, telepathyDest, overwrite: true);
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"  Installed: {telepathyDest}");
@@ -102,7 +124,7 @@ try
     }
 
     // Clear cache to avoid stale data
-    Console.WriteLine("\n[4/4] Clearing BepInEx cache...");
+    Console.WriteLine("\n[5/5] Clearing BepInEx cache...");
     string cachePath = Path.Combine(gamePath, "BepInEx", "cache");
     if (Directory.Exists(cachePath))
     {
@@ -242,4 +264,126 @@ void WaitAndExit(int code)
     Console.WriteLine("Press any key to exit...");
     Console.ReadKey(true);
     Environment.Exit(code);
+}
+
+void CloseGameIfRunning()
+{
+    var processes = Process.GetProcessesByName("Autonauts");
+    if (processes.Length > 0)
+    {
+        // Dispose initial check processes
+        foreach (var p in processes) p.Dispose();
+        
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"  Autonauts is running!");
+        Console.ResetColor();
+        Console.WriteLine();
+        Console.WriteLine("  Please close Autonauts to continue, or press:");
+        Console.WriteLine("    [Y] Force close the game");
+        Console.WriteLine("    [N] Wait for you to close it manually");
+        Console.Write("\n  > ");
+        
+        while (true)
+        {
+            // Check if key is available
+            if (Console.KeyAvailable)
+            {
+                var key = Console.ReadKey(true).Key;
+                if (key == ConsoleKey.Y)
+                {
+                    Console.WriteLine("Y");
+                    Console.WriteLine("\n  Force closing Autonauts...");
+                    ForceCloseGame();
+                    break;
+                }
+                else if (key == ConsoleKey.N)
+                {
+                    Console.WriteLine("N");
+                    Console.WriteLine("\n  Waiting for you to close Autonauts...");
+                    WaitForGameToClose();
+                    break;
+                }
+            }
+            
+            // Also check if game was closed while waiting for input
+            var currentProcesses = Process.GetProcessesByName("Autonauts");
+            bool stillRunning = currentProcesses.Length > 0;
+            foreach (var p in currentProcesses) p.Dispose();
+            
+            if (!stillRunning)
+            {
+                Console.WriteLine("(closed)");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("\n  Autonauts was closed!");
+                Console.ResetColor();
+                break;
+            }
+            
+            Thread.Sleep(100);
+        }
+        
+        // Give the system a moment to release file handles
+        Thread.Sleep(1000);
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("  Autonauts is not running");
+        Console.ResetColor();
+    }
+}
+
+void ForceCloseGame()
+{
+    var processes = Process.GetProcessesByName("Autonauts");
+    foreach (var process in processes)
+    {
+        try
+        {
+            process.CloseMainWindow();
+            if (!process.WaitForExit(3000))
+            {
+                Console.WriteLine("  Game didn't close gracefully, killing process...");
+                process.Kill();
+                process.WaitForExit(2000);
+            }
+            process.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"  Failed to close process: {ex.Message}");
+            Console.ResetColor();
+        }
+    }
+    
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine("  Game closed!");
+    Console.ResetColor();
+}
+
+void WaitForGameToClose()
+{
+    int dots = 0;
+    while (true)
+    {
+        var processes = Process.GetProcessesByName("Autonauts");
+        bool stillRunning = processes.Length > 0;
+        foreach (var p in processes) p.Dispose();
+        
+        if (!stillRunning)
+        {
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("  Autonauts closed!");
+            Console.ResetColor();
+            break;
+        }
+        
+        // Show waiting animation
+        Console.Write($"\r  Waiting{new string('.', (dots % 3) + 1)}   ");
+        dots++;
+        
+        Thread.Sleep(500);
+    }
 }

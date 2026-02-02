@@ -13,8 +13,8 @@ Write-Host "[2/2] Building installer..." -ForegroundColor Yellow
 dotnet publish Installer/AutonautsMP.Installer.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
-# Create dist
-$dist = "dist"
+# Create AutonautsMPInstaller
+$dist = "AutonautsMPInstaller"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Path $dist | Out-Null
 

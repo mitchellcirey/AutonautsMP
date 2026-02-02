@@ -147,8 +147,9 @@ namespace AutonautsMP.UI
             
             _debugTextStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 14,
+                fontSize = 12,
                 fontStyle = FontStyle.Bold,
+                font = Font.CreateDynamicFontFromOSFont("Consolas", 12),
                 normal = { textColor = Color.green }
             };
             
@@ -180,14 +181,21 @@ namespace AutonautsMP.UI
         }
         
         /// <summary>
-        /// Draw the "Multiplayer Mod Loaded" debug overlay.
+        /// Draw the ASCII art logo overlay.
         /// Always visible in top-left corner.
         /// </summary>
         private void DrawDebugOverlay()
         {
+            string asciiArt = 
+@"     _         _                         _       __  __ ____
+    / \  _   _| |_ ___  _ __   __ _ _   _| |_ ___|  \/  |  _ \
+   / _ \| | | | __/ _ \| '_ \ / _` | | | | __/ __| |\/| | |_) |
+  / ___ \ |_| | || (_) | | | | (_| | |_| | |_\__ \ |  | |  __/
+ /_/   \_\__,_|\__\___/|_| |_|\__,_|\__,_|\__|___/_|  |_|_|";
+
             GUI.Label(
-                new Rect(10, 10, 250, 25),
-                "AutonautsMP Loaded Successfully",
+                new Rect(10, 10, 500, 80),
+                asciiArt,
                 _debugTextStyle
             );
         }
