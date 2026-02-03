@@ -191,6 +191,12 @@ namespace AutonautsMP.UI
             // Initialize styles if needed (must be done in OnGUI)
             InitializeStyles();
             
+            // Show debug overlay when connected (if dev feature enabled)
+            if (NetworkManager.Instance.IsConnected && DevSettings.IsFeatureEnabled(DevFeature.NetworkOverlay))
+            {
+                DrawDebugOverlay();
+            }
+            
             // Always show the connection HUD when connected (and main UI is closed)
             if (!_showWindow && NetworkManager.Instance.IsConnected)
             {
@@ -529,6 +535,116 @@ namespace AutonautsMP.UI
             }
         }
         
+        /// <summary>
+        /// Draws the network debug overlay in the top-left corner.
+        /// Shows: Connected, IsHost, Ping, Packets Sent/Received per sec, Shared Counter
+        /// </summary>
+        private void DrawDebugOverlay()
+        {
+            float overlayWidth = 180f;
+            float overlayHeight = 130f;
+            float overlayX = 10f;
+            float overlayY = 10f;
+            
+            Rect overlayRect = new Rect(overlayX, overlayY, overlayWidth, overlayHeight);
+            
+            // Block input on overlay
+            Event e = Event.current;
+            if (overlayRect.Contains(e.mousePosition) && (e.isMouse || e.isScrollWheel))
+            {
+                e.Use();
+            }
+            
+            // Semi-transparent background
+            GUI.color = new Color(0, 0, 0, 0.75f);
+            GUI.DrawTexture(overlayRect, _panelTexture);
+            
+            // Top border accent (cyan for debug)
+            GUI.color = _primaryColor;
+            GUI.DrawTexture(new Rect(overlayX, overlayY, overlayWidth, 2), _accentTexture);
+            GUI.color = Color.white;
+            
+            // Content
+            float padding = 8f;
+            float y = overlayY + 6f;
+            float contentWidth = overlayWidth - (padding * 2);
+            float rowHeight = 16f;
+            
+            // Header
+            GUIStyle headerStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 10,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = _primaryColor }
+            };
+            GUI.Label(new Rect(overlayX + padding, y, contentWidth, rowHeight), "NETWORK DEBUG", headerStyle);
+            y += rowHeight + 4f;
+            
+            // Separator
+            GUI.color = new Color(1, 1, 1, 0.2f);
+            GUI.DrawTexture(new Rect(overlayX + padding, y, contentWidth, 1), _panelTexture);
+            GUI.color = Color.white;
+            y += 5f;
+            
+            // Label and value styles
+            GUIStyle labelStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 10,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = new Color(0.7f, 0.7f, 0.75f) }
+            };
+            GUIStyle valueStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 10,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleRight,
+                normal = { textColor = Color.white }
+            };
+            
+            // Connected status
+            GUI.Label(new Rect(overlayX + padding, y, 70, rowHeight), "Connected:", labelStyle);
+            valueStyle.normal.textColor = NetworkManager.Instance.IsConnected ? _secondaryColor : _dangerColor;
+            GUI.Label(new Rect(overlayX + padding, y, contentWidth, rowHeight), 
+                NetworkManager.Instance.IsConnected ? "Yes" : "No", valueStyle);
+            y += rowHeight;
+            
+            // IsHost status
+            GUI.Label(new Rect(overlayX + padding, y, 70, rowHeight), "IsHost:", labelStyle);
+            valueStyle.normal.textColor = NetworkManager.Instance.IsHost ? _accentColor : Color.white;
+            GUI.Label(new Rect(overlayX + padding, y, contentWidth, rowHeight), 
+                NetworkManager.Instance.IsHost ? "Yes" : "No", valueStyle);
+            y += rowHeight;
+            
+            // Ping
+            int ping = NetworkManager.Instance.IsHost ? 0 : NetworkManager.Instance.ClientPing;
+            GUI.Label(new Rect(overlayX + padding, y, 70, rowHeight), "Ping:", labelStyle);
+            Color pingColor = ping < 50 ? _secondaryColor : (ping < 100 ? _accentColor : _dangerColor);
+            valueStyle.normal.textColor = pingColor;
+            GUI.Label(new Rect(overlayX + padding, y, contentWidth, rowHeight), 
+                NetworkManager.Instance.IsHost ? "N/A" : $"{ping}ms", valueStyle);
+            y += rowHeight;
+            
+            // Packets Sent/sec
+            GUI.Label(new Rect(overlayX + padding, y, 70, rowHeight), "Sent:", labelStyle);
+            valueStyle.normal.textColor = Color.white;
+            GUI.Label(new Rect(overlayX + padding, y, contentWidth, rowHeight), 
+                $"{NetworkManager.Instance.PacketsSentPerSec}/sec", valueStyle);
+            y += rowHeight;
+            
+            // Packets Received/sec
+            GUI.Label(new Rect(overlayX + padding, y, 70, rowHeight), "Received:", labelStyle);
+            GUI.Label(new Rect(overlayX + padding, y, contentWidth, rowHeight), 
+                $"{NetworkManager.Instance.PacketsReceivedPerSec}/sec", valueStyle);
+            y += rowHeight;
+            
+            // Shared Counter
+            GUI.Label(new Rect(overlayX + padding, y, 70, rowHeight), "Counter:", labelStyle);
+            valueStyle.normal.textColor = _accentColor;
+            GUI.Label(new Rect(overlayX + padding, y, contentWidth, rowHeight), 
+                $"{TestSyncManager.Instance.SharedCounter}", valueStyle);
+        }
+
         private void DrawConnectionHUD()
         {
             // Get all players
@@ -956,6 +1072,44 @@ namespace AutonautsMP.UI
                     string pingInfo = clientPing > 0 ? $"Your ping: {clientPing}ms" : "Measuring ping...";
                     GUI.Label(new Rect(padding, y, contentWidth, 18), pingInfo, pingInfoStyle);
                     y += 25;
+                }
+                
+                // === Test Sync Section (Dev Mode only) ===
+                if (DevSettings.IsFeatureEnabled(DevFeature.TestSyncUI))
+                {
+                    y += 10;
+                    
+                    // Separator line
+                    GUI.color = new Color(1, 1, 1, 0.3f);
+                    GUI.DrawTexture(new Rect(padding, y, contentWidth, 1), _accentTexture);
+                    GUI.color = Color.white;
+                    y += 15;
+                    
+                    // Test Sync header
+                    GUIStyle testHeaderStyle = new GUIStyle(_labelStyle)
+                    {
+                        normal = { textColor = _primaryColor }
+                    };
+                    GUI.Label(new Rect(padding, y, contentWidth / 2, 18), "NETWORK TEST", testHeaderStyle);
+                    
+                    // Counter display on right
+                    GUIStyle counterStyle = new GUIStyle(_labelStyle)
+                    {
+                        alignment = TextAnchor.MiddleRight,
+                        normal = { textColor = _accentColor }
+                    };
+                    GUI.Label(new Rect(padding, y, contentWidth, 18), $"Counter: {TestSyncManager.Instance.SharedCounter}", counterStyle);
+                    y += 28;
+                    
+                    // Send Test Packet button
+                    GUI.backgroundColor = _primaryColor;
+                    if (GUI.Button(new Rect(padding, y, contentWidth, 38), "SEND TEST PACKET", _buttonSmallStyle))
+                    {
+                        TestSyncManager.Instance.RequestIncrement();
+                        DebugLogger.Info("Test packet button clicked");
+                    }
+                    GUI.backgroundColor = Color.white;
+                    y += 50;
                 }
                 
                 // Disconnect button

@@ -57,6 +57,13 @@ namespace AutonautsMP.Network
         private const float PING_INTERVAL = 2f; // Send ping every 2 seconds
         private int _clientPing = 0; // Client's ping to server
 
+        // Packet statistics tracking
+        private int _packetsSentThisSecond = 0;
+        private int _packetsReceivedThisSecond = 0;
+        private float _lastStatResetTime = 0f;
+        private int _packetsSentPerSec = 0;
+        private int _packetsReceivedPerSec = 0;
+
         // Events
         public event Action<ConnectionState> OnStateChanged;
         public event Action<int, string> OnPlayerConnected;    // clientId, info
@@ -76,6 +83,8 @@ namespace AutonautsMP.Network
         public PlayerInfo LocalPlayer => _localPlayer;
         public string LocalPlayerName => _localPlayerName;
         public int ClientPing => _clientPing;
+        public int PacketsSentPerSec => _packetsSentPerSec;
+        public int PacketsReceivedPerSec => _packetsReceivedPerSec;
 
         private NetworkManager()
         {
@@ -113,6 +122,16 @@ namespace AutonautsMP.Network
                     
                     SetState(ConnectionState.Hosting);
                     DebugLogger.Info($"Server started on port {port}");
+                    
+                    // Open debug console for host (if dev feature enabled)
+                    if (DevSettings.IsFeatureEnabled(DevFeature.ConsoleOnHost))
+                    {
+                        DebugConsole.Show();
+                        DebugConsole.LogInfo($"Server started on port {port}");
+                        DebugConsole.LogInfo($"Local player: {_localPlayerName}");
+                        DebugConsole.LogNetwork("Waiting for clients to connect...");
+                    }
+                    
                     return true;
                 }
                 else
@@ -190,8 +209,11 @@ namespace AutonautsMP.Network
         {
             if (_state == ConnectionState.Hosting)
             {
+                DebugConsole.LogInfo("Server shutting down...");
                 _server.Stop();
                 _connectedClients.Clear();
+                // Close the debug console when stopping host
+                DebugConsole.Hide();
             }
             else if (_state == ConnectionState.Connected || _state == ConnectionState.Connecting)
             {
@@ -212,6 +234,9 @@ namespace AutonautsMP.Network
         /// </summary>
         public void Update()
         {
+            // Update packet statistics every second
+            UpdatePacketStats();
+
             // Process server messages
             if (_state == ConnectionState.Hosting)
             {
@@ -224,6 +249,22 @@ namespace AutonautsMP.Network
             {
                 ProcessClientMessages();
                 UpdateClientPing();
+            }
+        }
+
+        /// <summary>
+        /// Updates packet statistics - resets counters every second.
+        /// </summary>
+        private void UpdatePacketStats()
+        {
+            float currentTime = UnityEngine.Time.realtimeSinceStartup;
+            if (currentTime - _lastStatResetTime >= 1f)
+            {
+                _packetsSentPerSec = _packetsSentThisSecond;
+                _packetsReceivedPerSec = _packetsReceivedThisSecond;
+                _packetsSentThisSecond = 0;
+                _packetsReceivedThisSecond = 0;
+                _lastStatResetTime = currentTime;
             }
         }
         
@@ -262,6 +303,7 @@ namespace AutonautsMP.Network
                 {
                     case EventType.Connected:
                         DebugLogger.Info($"Client {msg.connectionId} connected");
+                        DebugConsole.LogNetwork($"Client {msg.connectionId} connected");
                         if (!_connectedClients.Contains(msg.connectionId))
                         {
                             _connectedClients.Add(msg.connectionId);
@@ -277,7 +319,9 @@ namespace AutonautsMP.Network
                         break;
 
                     case EventType.Disconnected:
+                        string disconnectedName = _players.ContainsKey(msg.connectionId) ? _players[msg.connectionId].Name : $"Client {msg.connectionId}";
                         DebugLogger.Info($"Client {msg.connectionId} disconnected");
+                        DebugConsole.LogNetwork($"{disconnectedName} disconnected");
                         _connectedClients.Remove(msg.connectionId);
                         _players.Remove(msg.connectionId);
                         _pendingPings.Remove(msg.connectionId);
@@ -292,6 +336,7 @@ namespace AutonautsMP.Network
         {
             if (data == null || data.Length == 0) return;
             
+            _packetsReceivedThisSecond++;
             var msgType = (NetMessageType)data[0];
             
             switch (msgType)
@@ -305,6 +350,7 @@ namespace AutonautsMP.Network
                         {
                             _players[clientId].Name = playerName;
                             DebugLogger.Info($"Player {clientId} name: {playerName}");
+                            DebugConsole.LogInfo($"Player {clientId} identified as: {playerName}");
                             OnPlayerListUpdated?.Invoke();
                         }
                     }
@@ -378,6 +424,7 @@ namespace AutonautsMP.Network
         {
             if (data == null || data.Length == 0) return;
             
+            _packetsReceivedThisSecond++;
             var msgType = (NetMessageType)data[0];
             
             switch (msgType)
@@ -455,6 +502,7 @@ namespace AutonautsMP.Network
             if (_state == ConnectionState.Hosting)
             {
                 _server.Send(clientId, data);
+                _packetsSentThisSecond++;
             }
         }
 
@@ -466,6 +514,7 @@ namespace AutonautsMP.Network
             if (_state == ConnectionState.Connected)
             {
                 _client.Send(data);
+                _packetsSentThisSecond++;
             }
         }
 
@@ -479,6 +528,7 @@ namespace AutonautsMP.Network
                 foreach (var clientId in _connectedClients)
                 {
                     _server.Send(clientId, data);
+                    _packetsSentThisSecond++;
                 }
             }
         }

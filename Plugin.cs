@@ -31,6 +31,9 @@ namespace AutonautsMP
             
             // Initialize user settings (for saved servers, etc.)
             UserSettings.Initialize();
+            
+            // Initialize TestSyncManager (for network testing)
+            TestSyncManager.Initialize();
 
             // Log startup
             Logger.LogInfo("================================================");

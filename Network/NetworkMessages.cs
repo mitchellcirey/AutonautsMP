@@ -37,7 +37,11 @@ namespace AutonautsMP.Network
 
         // Ping/Pong
         Ping = 100,
-        Pong = 101
+        Pong = 101,
+
+        // Test sync messages (for network debugging)
+        TestIncrement = 200,    // Client → Host: request counter increment
+        TestBroadcast = 201     // Host → All: broadcast new counter value
     }
 
     /// <summary>
@@ -99,6 +103,28 @@ namespace AutonautsMP.Network
             {
                 writer.Write((byte)MessageType.Pong);
                 writer.Write(originalTimestamp);
+                return ms.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Build a test increment request (client to host).
+        /// </summary>
+        public static byte[] BuildTestIncrement()
+        {
+            return new byte[] { (byte)MessageType.TestIncrement };
+        }
+
+        /// <summary>
+        /// Build a test broadcast message (host to all clients).
+        /// </summary>
+        public static byte[] BuildTestBroadcast(int counterValue)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
+            {
+                writer.Write((byte)MessageType.TestBroadcast);
+                writer.Write(counterValue);
                 return ms.ToArray();
             }
         }
