@@ -18,6 +18,16 @@ Write-Host "[3/3] Building updater..." -ForegroundColor Yellow
 dotnet publish Updater/AutonautsMP.Updater.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
+# Extract version from DevSettings.cs
+$devSettings = Get-Content "Core/DevSettings.cs" -Raw
+if ($devSettings -match 'Version\s*=\s*"([^"]+)"') {
+    $version = $Matches[1]
+} else {
+    Write-Host "ERROR: Could not find Version in DevSettings.cs" -ForegroundColor Red
+    exit 1
+}
+Write-Host "Version: $version" -ForegroundColor Cyan
+
 # Create AutonautsMPInstaller
 $dist = "AutonautsMPInstaller"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
@@ -27,6 +37,9 @@ Copy-Item "bin/Release/AutonautsMP.dll" "$dist/"
 Copy-Item "bin/Release/Telepathy.dll" "$dist/"
 Copy-Item "Installer/bin/Release/net8.0/win-x64/publish/AutonautsMP.Installer.exe" "$dist/"
 Copy-Item "Updater/bin/Release/net8.0/win-x64/publish/AutonautsMP.Updater.exe" "$dist/"
+
+# Write version.txt (included in package and installed alongside mod)
+$version | Out-File -FilePath "$dist/version.txt" -Encoding utf8 -NoNewline
 
 Write-Host "`nPackage created in: $((Resolve-Path $dist).Path)" -ForegroundColor Green
 Get-ChildItem $dist | ForEach-Object { Write-Host "  $($_.Name) - $("{0:N0}" -f $_.Length) bytes" }

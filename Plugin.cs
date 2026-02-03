@@ -10,12 +10,11 @@ namespace AutonautsMP
     /// AutonautsMP - Multiplayer mod for Autonauts
     /// Full networking implementation with host/join functionality
     /// </summary>
-    [BepInPlugin(GUID, NAME, VERSION)]
+    [BepInPlugin(GUID, NAME, DevSettings.Version)]
     internal class Plugin : BaseUnityPlugin
     {
         public const string GUID = "com.autonautsmp.mod";
         public const string NAME = "AutonautsMP";
-        public const string VERSION = "1.0.0";
 
         // State
         private static bool _initialized = false;
@@ -37,7 +36,7 @@ namespace AutonautsMP
 
             // Log startup
             Logger.LogInfo("================================================");
-            Logger.LogInfo($"{NAME} v{VERSION} initializing...");
+            Logger.LogInfo($"{NAME} v{DevSettings.Version} initializing...");
             Logger.LogInfo("================================================");
             Logger.LogInfo($"Press {ModConfig.ToggleKey} or click 'MP' button to open UI");
             Logger.LogInfo("Mod loaded successfully!");

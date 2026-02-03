@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Headers;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
@@ -43,15 +42,17 @@ try
         return;
     }
     
-    string modPath = Path.Combine(gamePath, "BepInEx", "plugins", "AutonautsMP", MOD_DLL);
-    Version? installedVersion = null;
+    string modDir = Path.Combine(gamePath, "BepInEx", "plugins", "AutonautsMP");
+    string modPath = Path.Combine(modDir, MOD_DLL);
+    string versionPath = Path.Combine(modDir, "version.txt");
+    string? installedVersion = null;
     
     if (File.Exists(modPath))
     {
-        installedVersion = GetModVersion(modPath);
+        installedVersion = GetInstalledVersion(versionPath);
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"  Found: {modPath}");
-        Console.WriteLine($"  Installed version: {installedVersion?.ToString() ?? "unknown"}");
+        Console.WriteLine($"  Installed version: {installedVersion ?? "unknown"}");
         Console.ResetColor();
     }
     else
@@ -79,7 +80,7 @@ try
     
     // Compare versions
     Console.WriteLine("\n[3/4] Comparing versions...");
-    bool needsUpdate = installedVersion == null || latestVersion > installedVersion;
+    bool needsUpdate = installedVersion == null || CompareVersions(latestVersion, installedVersion) > 0;
     
     if (!needsUpdate)
     {
@@ -165,10 +166,9 @@ try
         ZipFile.ExtractToDirectory(tempZip, tempExtract);
         
         // Find and copy mod files
-        string modDir = Path.Combine(gamePath, "BepInEx", "plugins", "AutonautsMP");
         Directory.CreateDirectory(modDir);
         
-        // Look for the DLL in the extracted files
+        // Look for mod files in the extracted archive
         var dllFiles = Directory.GetFiles(tempExtract, "*.dll", SearchOption.AllDirectories);
         foreach (var dll in dllFiles)
         {
@@ -176,6 +176,14 @@ try
             string destPath = Path.Combine(modDir, fileName);
             Console.WriteLine($"  Installing: {fileName}");
             File.Copy(dll, destPath, overwrite: true);
+        }
+        
+        // Copy version.txt if present
+        var versionFiles = Directory.GetFiles(tempExtract, "version.txt", SearchOption.AllDirectories);
+        foreach (var vf in versionFiles)
+        {
+            string destPath = Path.Combine(modDir, "version.txt");
+            File.Copy(vf, destPath, overwrite: true);
         }
         
         // Clear BepInEx cache
@@ -259,29 +267,33 @@ void PrintBanner()
     Console.WriteLine("  Checks GitHub for the latest release\n");
 }
 
-Version? GetModVersion(string dllPath)
+string? GetInstalledVersion(string versionFilePath)
 {
     try
     {
-        // Load assembly metadata without loading into the current AppDomain
-        var assemblyName = AssemblyName.GetAssemblyName(dllPath);
-        return assemblyName.Version;
+        if (File.Exists(versionFilePath))
+            return File.ReadAllText(versionFilePath).Trim();
     }
-    catch
-    {
-        // Try reading file version as fallback
-        try
-        {
-            var versionInfo = FileVersionInfo.GetVersionInfo(dllPath);
-            if (Version.TryParse(versionInfo.FileVersion, out var version))
-                return version;
-        }
-        catch { }
-    }
+    catch { }
     return null;
 }
 
-async Task<(Version? version, string? downloadUrl, string? releaseNotes)> GetLatestRelease()
+int CompareVersions(string v1, string v2)
+{
+    // Compare semantic versions like "1.0.0" vs "1.2.3"
+    var parts1 = v1.Split('.').Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
+    var parts2 = v2.Split('.').Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
+    
+    for (int i = 0; i < Math.Max(parts1.Length, parts2.Length); i++)
+    {
+        int p1 = i < parts1.Length ? parts1[i] : 0;
+        int p2 = i < parts2.Length ? parts2[i] : 0;
+        if (p1 != p2) return p1.CompareTo(p2);
+    }
+    return 0;
+}
+
+async Task<(string? version, string? downloadUrl, string? releaseNotes)> GetLatestRelease()
 {
     try
     {
@@ -297,14 +309,13 @@ async Task<(Version? version, string? downloadUrl, string? releaseNotes)> GetLat
         
         // Get version from tag name (strip 'v' prefix if present)
         string tagName = root.GetProperty("tag_name").GetString() ?? "";
-        string versionStr = tagName.TrimStart('v', 'V');
+        string? version = tagName.TrimStart('v', 'V');
         
-        if (!Version.TryParse(versionStr, out var version))
+        // Try to extract version from tag like "release-1.2.3" if needed
+        if (string.IsNullOrEmpty(version) || !char.IsDigit(version[0]))
         {
-            // Try to extract version from tag like "release-1.2.3"
             var match = Regex.Match(tagName, @"(\d+\.\d+\.\d+)");
-            if (match.Success)
-                Version.TryParse(match.Groups[1].Value, out version);
+            version = match.Success ? match.Groups[1].Value : null;
         }
         
         // Get release notes

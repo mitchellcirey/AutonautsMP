@@ -121,6 +121,14 @@ try
             Console.WriteLine("  Warning: Telepathy.dll not found - networking may not work");
             Console.ResetColor();
         }
+        
+        // Copy version.txt for updater
+        string versionSource = Path.Combine(sourceDirPath, "version.txt");
+        if (File.Exists(versionSource))
+        {
+            string versionDest = Path.Combine(modDir, "version.txt");
+            File.Copy(versionSource, versionDest, overwrite: true);
+        }
     }
 
     // Clear cache to avoid stale data

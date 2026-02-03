@@ -6,6 +6,12 @@ namespace AutonautsMP.Core
     public static class DevSettings
     {
         // ============================================
+        // VERSION - Update this for new releases
+        // ============================================
+        
+        public const string Version = "1.0.0";
+
+        // ============================================
         // MASTER TOGGLE
         // ============================================
         
