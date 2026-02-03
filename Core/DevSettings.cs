@@ -9,7 +9,7 @@ namespace AutonautsMP.Core
         // VERSION - Update this for new releases
         // ============================================
         
-        public const string Version = "1.0.1";
+        public const string Version = "1.1.0";
 
         // ============================================
         // MASTER TOGGLE
