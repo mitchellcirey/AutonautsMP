@@ -690,6 +690,47 @@ namespace AutonautsMP.Sync
         }
 
         /// <summary>
+        /// Create a valid JSON Summary.txt content that Autonauts expects.
+        /// </summary>
+        private string CreateSummaryJson(string saveName)
+        {
+            // Autonauts expects Summary.txt to be valid JSON with GameOptions
+            // Field names must match exactly what GameOptions.Save() writes:
+            // - GameModeName (string)
+            // - GameSize (int)
+            // - RandomObjectsEnabled (bool)
+            // - BadgeUnlocksEnabled (bool)
+            // - RecordingEnabled (bool)
+            // - TutorialEnabled (bool)
+            // - BotRechargingEnabled (bool)
+            // - BotLimitEnabled (bool)
+            // - Seed (int)
+            // - Name (string)
+            
+            var sb = new System.Text.StringBuilder();
+            sb.Append("{");
+            sb.Append("\"Version\":\"140.2\",");
+            sb.Append("\"External\":0,");
+            sb.Append("\"GameOptions\":{");
+            sb.Append("\"GameModeName\":\"ModeCampaign\",");
+            sb.Append("\"GameSize\":1,");  // 1 = Medium
+            sb.Append("\"RandomObjectsEnabled\":true,");
+            sb.Append("\"BadgeUnlocksEnabled\":true,");
+            sb.Append("\"RecordingEnabled\":false,");
+            sb.Append("\"TutorialEnabled\":false,");
+            sb.Append("\"BotRechargingEnabled\":true,");
+            sb.Append("\"BotLimitEnabled\":false,");
+            sb.Append("\"Seed\":12345,");
+            sb.Append("\"Name\":\"" + saveName.Replace("\"", "\\\"") + "\"");
+            sb.Append("},");
+            sb.Append("\"DateDay\":1,");
+            sb.Append("\"DateTime\":0");
+            sb.Append("}");
+            
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// Write save data to temp location.
         /// </summary>
         private string WriteTempSave(byte[] saveData, string saveName)
@@ -721,10 +762,11 @@ namespace AutonautsMP.Sync
             File.WriteAllBytes(worldFilePath, saveData);
             DebugLogger.Info($"Wrote World.txt to: {worldFilePath}");
             
-            // Create a minimal Summary.txt so the game recognizes this as a valid save
+            // Create a valid JSON Summary.txt so the game recognizes this as a valid save
+            // The game expects: Version, External, GameOptions, DateDay, DateTime
             string summaryPath = Path.Combine(saveFolder, "Summary.txt");
-            string summaryContent = $"Name:MP_{saveName}\nVersion:1\nDate:{DateTime.Now:yyyy-MM-dd HH:mm:ss}\n";
-            File.WriteAllText(summaryPath, summaryContent);
+            string summaryJson = CreateSummaryJson(saveName);
+            File.WriteAllText(summaryPath, summaryJson);
             DebugLogger.Info($"Wrote Summary.txt to: {summaryPath}");
             
             // Return the save folder path (not the World.txt path)

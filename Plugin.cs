@@ -44,6 +44,9 @@ namespace AutonautsMP
             // Initialize WorldSnapshotManager (for world sync on client join)
             WorldSnapshotManager.Initialize();
             
+            // Initialize ObjectSyncManager (for object sync during gameplay)
+            ObjectSyncManager.Initialize();
+            
             // Initialize game state detector
             GameStateDetector.Initialize();
             
@@ -54,6 +57,7 @@ namespace AutonautsMP
             // Try to apply game-specific patches
             GameStatePatch.TryApplyPatches(_harmony);
             SaveLoadPatch.TryApplyPatches(_harmony);
+            ObjectSyncPatch.TryApplyPatches(_harmony);
 
             // Log startup
             Logger.LogInfo("================================================");
@@ -81,6 +85,9 @@ namespace AutonautsMP
             
             // Update transform sync (interpolation and sending)
             TransformSyncManager.Instance.Update();
+            
+            // Update object sync (process pending changes)
+            ObjectSyncManager.Instance.Update();
         }
         
         private void OnApplicationQuit()

@@ -274,7 +274,7 @@ namespace AutonautsMP.Sync
             
             // Add TextMesh component
             var textMesh = labelObj.AddComponent<TextMesh>();
-            textMesh.text = PlayerName;
+            textMesh.text = $"{PlayerName} [{PlayerId}]";
             textMesh.fontSize = 32;
             textMesh.characterSize = 0.1f;
             textMesh.anchor = TextAnchor.MiddleCenter;
