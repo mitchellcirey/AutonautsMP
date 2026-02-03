@@ -210,6 +210,7 @@ try
     Console.WriteLine();
     Console.WriteLine("Press F10 or click 'MP' button in-game to open multiplayer!");
     
+    AskToCreateShortcut();
     AskToLaunchGame(gamePath);
 }
 catch (HttpRequestException ex)
@@ -496,6 +497,97 @@ void CloseGameIfRunning()
         Thread.Sleep(1000);
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("  Game closed");
+        Console.ResetColor();
+    }
+}
+
+void AskToCreateShortcut()
+{
+    // Check if shortcut already exists
+    string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+    string shortcutPath = Path.Combine(desktopPath, "AutonautsMP.lnk");
+    
+    if (File.Exists(shortcutPath))
+        return; // Already have shortcut
+    
+    Console.WriteLine();
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.Write("Create desktop shortcut for easy updates? [Y/N]: ");
+    Console.ResetColor();
+    
+    while (true)
+    {
+        var key = Console.ReadKey(true).Key;
+        if (key == ConsoleKey.Y)
+        {
+            Console.WriteLine("Y");
+            CreateDesktopShortcut();
+            break;
+        }
+        else if (key == ConsoleKey.N)
+        {
+            Console.WriteLine("N");
+            break;
+        }
+    }
+}
+
+void CreateDesktopShortcut()
+{
+    try
+    {
+        string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        string shortcutPath = Path.Combine(desktopPath, "AutonautsMP.lnk");
+        string targetPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
+        
+        if (string.IsNullOrEmpty(targetPath))
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("  Could not determine executable path");
+            Console.ResetColor();
+            return;
+        }
+        
+        // Use PowerShell to create shortcut (works without COM interop)
+        string psScript = $@"
+$ws = New-Object -ComObject WScript.Shell
+$shortcut = $ws.CreateShortcut('{shortcutPath.Replace("'", "''")}')
+$shortcut.TargetPath = '{targetPath.Replace("'", "''")}'
+$shortcut.WorkingDirectory = '{Path.GetDirectoryName(targetPath)?.Replace("'", "''")}'
+$shortcut.Description = 'AutonautsMP Installer & Updater'
+$shortcut.Save()
+";
+        
+        var psi = new ProcessStartInfo
+        {
+            FileName = "powershell",
+            Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{psScript.Replace("\"", "\\\"")}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        
+        using var process = Process.Start(psi);
+        process?.WaitForExit(5000);
+        
+        if (File.Exists(shortcutPath))
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("  Desktop shortcut created!");
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("  Could not create shortcut");
+            Console.ResetColor();
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"  Could not create shortcut: {ex.Message}");
         Console.ResetColor();
     }
 }
