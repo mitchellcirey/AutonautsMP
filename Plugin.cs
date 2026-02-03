@@ -38,7 +38,7 @@ namespace AutonautsMP
             Logger.LogInfo("================================================");
             Logger.LogInfo($"{NAME} v{DevSettings.Version} initializing...");
             Logger.LogInfo("================================================");
-            Logger.LogInfo($"Press {ModConfig.ToggleKey} or click 'MP' button to open UI");
+            Logger.LogInfo($"Press {ModConfig.ToggleKey} or click 'AutonautsMP' button to open UI");
             Logger.LogInfo("Mod loaded successfully!");
 
             _initialized = true;
