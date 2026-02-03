@@ -39,6 +39,13 @@ namespace AutonautsMP.Network
         // Player sync messages
         PlayerTransform = 60,   // Position/rotation update
 
+        // World Snapshot messages (Phase 4)
+        SnapshotStart = 70,     // Host -> Client: begin snapshot transfer
+        SnapshotChunk = 71,     // Host -> Client: chunk of save data
+        SnapshotComplete = 72,  // Host -> Client: transfer complete
+        SnapshotAck = 73,       // Client -> Host: acknowledge receipt
+        SnapshotError = 74,     // Either direction: transfer failed
+
         // Ping/Pong
         Ping = 100,
         Pong = 101,
@@ -202,6 +209,89 @@ namespace AutonautsMP.Network
             return players;
         }
 
+        #region Snapshot Messages
+
+        /// <summary>
+        /// Build a snapshot start message (host to client).
+        /// Format: [MessageType:1][TotalSize:8][ChunkCount:4][SaveName:string]
+        /// </summary>
+        public static byte[] BuildSnapshotStart(long totalSize, int chunkCount, string saveName)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
+            {
+                writer.Write((byte)MessageType.SnapshotStart);
+                writer.Write(totalSize);
+                writer.Write(chunkCount);
+                writer.Write(saveName ?? "");
+                return ms.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Build a snapshot chunk message (host to client).
+        /// Format: [MessageType:1][ChunkIndex:4][Data:bytes]
+        /// </summary>
+        public static byte[] BuildSnapshotChunk(int chunkIndex, byte[] chunkData)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
+            {
+                writer.Write((byte)MessageType.SnapshotChunk);
+                writer.Write(chunkIndex);
+                writer.Write(chunkData.Length);
+                writer.Write(chunkData);
+                return ms.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Build a snapshot complete message (host to client).
+        /// Format: [MessageType:1][Checksum:4]
+        /// </summary>
+        public static byte[] BuildSnapshotComplete(uint checksum)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
+            {
+                writer.Write((byte)MessageType.SnapshotComplete);
+                writer.Write(checksum);
+                return ms.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Build a snapshot acknowledgment message (client to host).
+        /// Format: [MessageType:1][Success:1]
+        /// </summary>
+        public static byte[] BuildSnapshotAck(bool success)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
+            {
+                writer.Write((byte)MessageType.SnapshotAck);
+                writer.Write(success);
+                return ms.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Build a snapshot error message (either direction).
+        /// Format: [MessageType:1][ErrorMessage:string]
+        /// </summary>
+        public static byte[] BuildSnapshotError(string errorMessage)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
+            {
+                writer.Write((byte)MessageType.SnapshotError);
+                writer.Write(errorMessage ?? "Unknown error");
+                return ms.ToArray();
+            }
+        }
+
+        #endregion
+
         /// <summary>
         /// Read message type from packet.
         /// </summary>
@@ -301,4 +391,113 @@ namespace AutonautsMP.Network
         public string Name;
         public int Ping;
     }
+
+    #region Snapshot Data Structures
+
+    /// <summary>
+    /// Parsed snapshot start data.
+    /// </summary>
+    public struct SnapshotStartData
+    {
+        public long TotalSize;
+        public int ChunkCount;
+        public string SaveName;
+
+        public static SnapshotStartData Read(byte[] data)
+        {
+            using (var reader = NetworkMessages.CreateReader(data))
+            {
+                return new SnapshotStartData
+                {
+                    TotalSize = reader.ReadInt64(),
+                    ChunkCount = reader.ReadInt32(),
+                    SaveName = reader.ReadString()
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parsed snapshot chunk data.
+    /// </summary>
+    public struct SnapshotChunkData
+    {
+        public int ChunkIndex;
+        public byte[] Data;
+
+        public static SnapshotChunkData Read(byte[] data)
+        {
+            using (var reader = NetworkMessages.CreateReader(data))
+            {
+                int chunkIndex = reader.ReadInt32();
+                int length = reader.ReadInt32();
+                byte[] chunkData = reader.ReadBytes(length);
+                
+                return new SnapshotChunkData
+                {
+                    ChunkIndex = chunkIndex,
+                    Data = chunkData
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parsed snapshot complete data.
+    /// </summary>
+    public struct SnapshotCompleteData
+    {
+        public uint Checksum;
+
+        public static SnapshotCompleteData Read(byte[] data)
+        {
+            using (var reader = NetworkMessages.CreateReader(data))
+            {
+                return new SnapshotCompleteData
+                {
+                    Checksum = reader.ReadUInt32()
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parsed snapshot acknowledgment data.
+    /// </summary>
+    public struct SnapshotAckData
+    {
+        public bool Success;
+
+        public static SnapshotAckData Read(byte[] data)
+        {
+            using (var reader = NetworkMessages.CreateReader(data))
+            {
+                return new SnapshotAckData
+                {
+                    Success = reader.ReadBoolean()
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parsed snapshot error data.
+    /// </summary>
+    public struct SnapshotErrorData
+    {
+        public string ErrorMessage;
+
+        public static SnapshotErrorData Read(byte[] data)
+        {
+            using (var reader = NetworkMessages.CreateReader(data))
+            {
+                return new SnapshotErrorData
+                {
+                    ErrorMessage = reader.ReadString()
+                };
+            }
+        }
+    }
+
+    #endregion
 }

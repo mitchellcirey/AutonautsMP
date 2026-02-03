@@ -1,6 +1,7 @@
 using UnityEngine;
 using AutonautsMP.Core;
 using AutonautsMP.Network;
+using AutonautsMP.Sync;
 
 namespace AutonautsMP.UI
 {
@@ -69,6 +70,13 @@ namespace AutonautsMP.UI
         private float _mpButtonHoverAnim = 0f;
         private bool _mpButtonHovered = false;
         
+        // Snapshot transfer state
+        private bool _showSnapshotProgress = false;
+        private float _snapshotProgress = 0f;
+        private string _snapshotStatus = "";
+        private Texture2D _progressBarBgTexture;
+        private Texture2D _progressBarFillTexture;
+        
         private void Awake()
         {
             // Initialize field defaults from user settings (last used values)
@@ -80,6 +88,12 @@ namespace AutonautsMP.UI
             NetworkManager.Instance.OnPlayerConnected += OnPlayerConnected;
             NetworkManager.Instance.OnPlayerDisconnected += OnPlayerDisconnected;
             NetworkManager.Instance.OnError += OnNetworkError;
+            
+            // Subscribe to snapshot events
+            WorldSnapshotManager.Instance.OnStateChanged += OnSnapshotStateChanged;
+            WorldSnapshotManager.Instance.OnProgressChanged += OnSnapshotProgressChanged;
+            WorldSnapshotManager.Instance.OnSnapshotLoadComplete += OnSnapshotLoadComplete;
+            WorldSnapshotManager.Instance.OnSnapshotError += OnSnapshotError;
             
             DebugLogger.Info("MultiplayerUI component initialized");
         }
@@ -101,6 +115,8 @@ namespace AutonautsMP.UI
             if (_mpButtonTexture != null) Destroy(_mpButtonTexture);
             if (_mpButtonHoverTexture != null) Destroy(_mpButtonHoverTexture);
             if (_mpButtonGlowTexture != null) Destroy(_mpButtonGlowTexture);
+            if (_progressBarBgTexture != null) Destroy(_progressBarBgTexture);
+            if (_progressBarFillTexture != null) Destroy(_progressBarFillTexture);
             
             // Unsubscribe from network events
             if (NetworkManager.Instance != null)
@@ -109,6 +125,15 @@ namespace AutonautsMP.UI
                 NetworkManager.Instance.OnPlayerConnected -= OnPlayerConnected;
                 NetworkManager.Instance.OnPlayerDisconnected -= OnPlayerDisconnected;
                 NetworkManager.Instance.OnError -= OnNetworkError;
+            }
+            
+            // Unsubscribe from snapshot events
+            if (WorldSnapshotManager.Instance != null)
+            {
+                WorldSnapshotManager.Instance.OnStateChanged -= OnSnapshotStateChanged;
+                WorldSnapshotManager.Instance.OnProgressChanged -= OnSnapshotProgressChanged;
+                WorldSnapshotManager.Instance.OnSnapshotLoadComplete -= OnSnapshotLoadComplete;
+                WorldSnapshotManager.Instance.OnSnapshotError -= OnSnapshotError;
             }
         }
         
@@ -153,6 +178,60 @@ namespace AutonautsMP.UI
         {
             _statusText = $"Error: {error}";
             DebugLogger.Error($"Network error: {error}");
+        }
+        
+        private void OnSnapshotStateChanged(SnapshotState state)
+        {
+            switch (state)
+            {
+                case SnapshotState.Receiving:
+                case SnapshotState.ReceivingStart:
+                    _showSnapshotProgress = true;
+                    _snapshotStatus = "Receiving world snapshot...";
+                    break;
+                case SnapshotState.Loading:
+                    _showSnapshotProgress = true;
+                    _snapshotStatus = "Loading world...";
+                    break;
+                case SnapshotState.PreparingSend:
+                case SnapshotState.Sending:
+                    _showSnapshotProgress = true;
+                    _snapshotStatus = "Sending world to client...";
+                    break;
+                case SnapshotState.Complete:
+                    _showSnapshotProgress = false;
+                    _snapshotStatus = "";
+                    break;
+                case SnapshotState.Error:
+                    _showSnapshotProgress = false;
+                    _snapshotStatus = "Snapshot transfer failed";
+                    break;
+                case SnapshotState.Idle:
+                    _showSnapshotProgress = false;
+                    _snapshotStatus = "";
+                    break;
+            }
+            
+            DebugLogger.Info($"Snapshot state changed: {state}");
+        }
+        
+        private void OnSnapshotProgressChanged(float progress)
+        {
+            _snapshotProgress = progress;
+        }
+        
+        private void OnSnapshotLoadComplete()
+        {
+            _statusText = "World loaded - ready to play!";
+            _showSnapshotProgress = false;
+            DebugLogger.Info("Snapshot load complete");
+        }
+        
+        private void OnSnapshotError(string error)
+        {
+            _statusText = $"Snapshot error: {error}";
+            _showSnapshotProgress = false;
+            DebugLogger.Error($"Snapshot error: {error}");
         }
         
         private void Update()
@@ -203,6 +282,12 @@ namespace AutonautsMP.UI
                 DrawConnectionHUD();
             }
             
+            // Show snapshot progress overlay when transferring
+            if (_showSnapshotProgress)
+            {
+                DrawSnapshotProgressOverlay();
+            }
+            
             // Always show toggle button (unless fullscreen UI is open)
             if (!_showWindow)
             {
@@ -237,6 +322,10 @@ namespace AutonautsMP.UI
             _mpButtonTexture = MakeCircularTexture(64, _primaryColor, 0.15f);
             _mpButtonHoverTexture = MakeCircularTexture(64, _accentColor, 0.2f);
             _mpButtonGlowTexture = MakeGlowTexture(80, _primaryColor);
+            
+            // Progress bar textures
+            _progressBarBgTexture = MakeTexture(2, 2, new Color(0.1f, 0.1f, 0.15f, 0.9f));
+            _progressBarFillTexture = MakeTexture(2, 2, _primaryColor);
             
             // Title style - large and prominent
             _titleStyle = new GUIStyle(GUI.skin.label)
@@ -794,6 +883,82 @@ namespace AutonautsMP.UI
                 
                 GUI.Label(new Rect(hudX + padding, y, contentWidth, 14), $"and {playerCount - 4} more...", moreStyle);
             }
+        }
+        
+        /// <summary>
+        /// Draws the snapshot transfer progress overlay (centered on screen).
+        /// </summary>
+        private void DrawSnapshotProgressOverlay()
+        {
+            float overlayWidth = 320f;
+            float overlayHeight = 100f;
+            float overlayX = (Screen.width - overlayWidth) / 2f;
+            float overlayY = (Screen.height - overlayHeight) / 2f;
+            
+            Rect overlayRect = new Rect(overlayX, overlayY, overlayWidth, overlayHeight);
+            
+            // Block input on overlay
+            Event e = Event.current;
+            if (overlayRect.Contains(e.mousePosition) && (e.isMouse || e.isScrollWheel))
+            {
+                e.Use();
+            }
+            
+            // Semi-transparent background
+            GUI.color = new Color(0, 0, 0, 0.9f);
+            GUI.DrawTexture(overlayRect, _panelTexture);
+            
+            // Top border accent
+            GUI.color = _primaryColor;
+            GUI.DrawTexture(new Rect(overlayX, overlayY, overlayWidth, 3), _accentTexture);
+            GUI.color = Color.white;
+            
+            // Content
+            float padding = 20f;
+            float y = overlayY + 18f;
+            float contentWidth = overlayWidth - (padding * 2);
+            
+            // Status text
+            GUIStyle statusStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 14,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = Color.white }
+            };
+            
+            // Pulsing effect for loading state
+            float pulse = (Mathf.Sin(_pulseTime * 3f) + 1f) / 2f * 0.3f + 0.7f;
+            GUI.color = new Color(1f, 1f, 1f, pulse);
+            GUI.Label(new Rect(overlayX + padding, y, contentWidth, 24), _snapshotStatus, statusStyle);
+            GUI.color = Color.white;
+            y += 32f;
+            
+            // Progress bar background
+            float barHeight = 18f;
+            Rect barBgRect = new Rect(overlayX + padding, y, contentWidth, barHeight);
+            GUI.DrawTexture(barBgRect, _progressBarBgTexture);
+            
+            // Progress bar fill
+            float fillWidth = contentWidth * (_snapshotProgress / 100f);
+            if (fillWidth > 0)
+            {
+                // Animate the fill color slightly
+                float colorPulse = (Mathf.Sin(_pulseTime * 2f) + 1f) / 2f * 0.2f + 0.8f;
+                GUI.color = new Color(_primaryColor.r * colorPulse + 0.2f, _primaryColor.g * colorPulse + 0.2f, _primaryColor.b, 1f);
+                GUI.DrawTexture(new Rect(overlayX + padding + 2, y + 2, fillWidth - 4, barHeight - 4), _progressBarFillTexture);
+                GUI.color = Color.white;
+            }
+            
+            // Progress percentage
+            GUIStyle percentStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 11,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = Color.white }
+            };
+            GUI.Label(barBgRect, $"{_snapshotProgress:F0}%", percentStyle);
         }
         
         private void DrawFullscreenUI()

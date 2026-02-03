@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using AutonautsMP.Core;
 
@@ -63,7 +64,16 @@ namespace AutonautsMP.Sync
             PlayerName = playerName;
             LastUpdateTime = Time.realtimeSinceStartup;
 
-            CreateGhost();
+            // Try to create ghost - it might fail if we're in the wrong scene
+            // It will be recreated in Update() if needed
+            try
+            {
+                CreateGhost();
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Warning($"Could not create ghost for {playerName}: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -76,7 +86,7 @@ namespace AutonautsMP.Sync
 
             if (template != null)
             {
-                Ghost = Object.Instantiate(template);
+                Ghost = UnityEngine.Object.Instantiate(template);
                 Ghost.name = $"RemotePlayer_{PlayerId}_{PlayerName}";
                 
                 // Disable any AI/input components
@@ -303,8 +313,22 @@ namespace AutonautsMP.Sync
         /// </summary>
         public void Update(float deltaTime)
         {
+            // Recreate ghost if it was destroyed (e.g., during scene load)
             if (Ghost == null)
+            {
+                DebugLogger.Info($"RemotePlayer ghost was destroyed, recreating for {PlayerName}");
+                CreateGhost();
+                
+                // Set initial position
+                if (Ghost != null)
+                {
+                    Ghost.transform.position = TargetPosition;
+                    Ghost.transform.rotation = Quaternion.Euler(0, TargetRotation, 0);
+                    CurrentPosition = TargetPosition;
+                    CurrentRotation = TargetRotation;
+                }
                 return;
+            }
 
             // Interpolate position
             CurrentPosition = Vector3.Lerp(CurrentPosition, TargetPosition, deltaTime * INTERPOLATION_SPEED);
@@ -324,7 +348,7 @@ namespace AutonautsMP.Sync
         {
             if (Ghost != null)
             {
-                Object.Destroy(Ghost);
+                UnityEngine.Object.Destroy(Ghost);
                 Ghost = null;
             }
         }

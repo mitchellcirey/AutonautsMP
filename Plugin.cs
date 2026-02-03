@@ -41,6 +41,9 @@ namespace AutonautsMP
             // Initialize TransformSyncManager (for player position sync)
             TransformSyncManager.Initialize();
             
+            // Initialize WorldSnapshotManager (for world sync on client join)
+            WorldSnapshotManager.Initialize();
+            
             // Initialize game state detector
             GameStateDetector.Initialize();
             
@@ -50,6 +53,7 @@ namespace AutonautsMP
             
             // Try to apply game-specific patches
             GameStatePatch.TryApplyPatches(_harmony);
+            SaveLoadPatch.TryApplyPatches(_harmony);
 
             // Log startup
             Logger.LogInfo("================================================");

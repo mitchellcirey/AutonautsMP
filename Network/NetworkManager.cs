@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using Telepathy;
 using AutonautsMP.Core;
+using AutonautsMP.Sync;
 
 namespace AutonautsMP.Network
 {
@@ -85,6 +86,21 @@ namespace AutonautsMP.Network
         public int ClientPing => _clientPing;
         public int PacketsSentPerSec => _packetsSentPerSec;
         public int PacketsReceivedPerSec => _packetsReceivedPerSec;
+        
+        /// <summary>
+        /// Whether a snapshot transfer is currently in progress.
+        /// </summary>
+        public bool IsSnapshotTransferring => WorldSnapshotManager.Instance.IsTransferring;
+        
+        /// <summary>
+        /// Current snapshot transfer progress (0-100).
+        /// </summary>
+        public float SnapshotProgress => WorldSnapshotManager.Instance.Progress;
+        
+        /// <summary>
+        /// Current snapshot status message.
+        /// </summary>
+        public string SnapshotStatus => WorldSnapshotManager.Instance.StatusMessage;
 
         private NetworkManager()
         {
@@ -250,6 +266,12 @@ namespace AutonautsMP.Network
                 ProcessClientMessages();
                 UpdateClientPing();
             }
+            
+            // Update snapshot transfers
+            if (IsConnected)
+            {
+                WorldSnapshotManager.Instance.Update();
+            }
         }
 
         /// <summary>
@@ -320,7 +342,7 @@ namespace AutonautsMP.Network
 
                     case EventType.Disconnected:
                         string disconnectedName = _players.ContainsKey(msg.connectionId) ? _players[msg.connectionId].Name : $"Client {msg.connectionId}";
-                        DebugLogger.Info($"Client {msg.connectionId} disconnected");
+                        DebugLogger.Warning($"SERVER: Client {msg.connectionId} ({disconnectedName}) disconnected");
                         DebugConsole.LogNetwork($"{disconnectedName} disconnected");
                         _connectedClients.Remove(msg.connectionId);
                         _players.Remove(msg.connectionId);
@@ -355,6 +377,16 @@ namespace AutonautsMP.Network
                             
                             // Broadcast updated player list to all clients
                             BroadcastPlayerList();
+                            
+                            // Send world snapshot to the new client (Phase 4)
+                            try
+                            {
+                                WorldSnapshotManager.Instance.SendSnapshotToClient(clientId);
+                            }
+                            catch (Exception ex)
+                            {
+                                DebugLogger.Error($"Failed to send snapshot to client {clientId}: {ex.Message}");
+                            }
                         }
                     }
                     break;
@@ -408,7 +440,8 @@ namespace AutonautsMP.Network
                         break;
 
                     case EventType.Disconnected:
-                        DebugLogger.Info("Disconnected from server");
+                        DebugLogger.Warning("DISCONNECT EVENT received from Telepathy - connection to server lost");
+                        DebugLogger.Warning($"Client state at disconnect: Connected={_client.Connected}, Connecting={_client.Connecting}");
                         SetState(ConnectionState.Disconnected);
                         OnError?.Invoke("Disconnected from server");
                         break;
