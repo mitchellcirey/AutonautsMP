@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
@@ -14,60 +15,64 @@ const string MOD_NAME = "AutonautsMP";
 const string MOD_DLL = "AutonautsMP.dll";
 const string BEPINEX_URL = "https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInEx_x64_5.4.22.0.zip";
 
+// Setup console window
+SetupConsoleWindow();
 Console.Title = MOD_NAME;
 PrintBanner();
 
 try
 {
-    // Find game
-    Console.WriteLine("[1/5] Locating Autonauts...");
+    // Step 1: Find game
+    PrintStep(1, 5, "Locating Autonauts...");
     string? gamePath = FindGamePath();
     
     if (gamePath == null)
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("Could not find Autonauts automatically.");
+        Console.WriteLine("    Could not find Autonauts automatically.");
         Console.ResetColor();
-        Console.WriteLine("Enter the path to your Autonauts folder:");
-        Console.Write("> ");
+        Console.WriteLine("    Enter the path to your Autonauts folder:");
+        Console.Write("    > ");
         gamePath = Console.ReadLine()?.Trim().Trim('"');
     }
     
     if (string.IsNullOrEmpty(gamePath) || !File.Exists(Path.Combine(gamePath, "Autonauts.exe")))
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("ERROR: Autonauts.exe not found.");
+        Console.WriteLine("    ERROR: Autonauts.exe not found.");
         Console.ResetColor();
         WaitAndExit(1);
         return;
     }
     
     Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"  Found: {gamePath}");
+    Console.WriteLine($"    Found: {gamePath}");
     Console.ResetColor();
+    Console.WriteLine();
 
-    // Check/Install BepInEx
-    Console.WriteLine("\n[2/5] Checking BepInEx...");
+    // Step 2: Check/Install BepInEx
+    PrintStep(2, 5, "Checking BepInEx...");
     string bepinexCore = Path.Combine(gamePath, "BepInEx", "core");
     string winhttp = Path.Combine(gamePath, "winhttp.dll");
     
     if (Directory.Exists(bepinexCore) && File.Exists(winhttp))
     {
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("  BepInEx already installed");
+        Console.WriteLine("    Already installed");
         Console.ResetColor();
     }
     else
     {
-        Console.WriteLine("  Downloading BepInEx 5.4.22...");
+        Console.WriteLine("    Downloading BepInEx 5.4.22...");
         await InstallBepInEx(gamePath);
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("  BepInEx installed!");
+        Console.WriteLine("    Installed!");
         Console.ResetColor();
     }
+    Console.WriteLine();
 
-    // Check installed version
-    Console.WriteLine("\n[3/5] Checking installed mod...");
+    // Step 3: Check installed version
+    PrintStep(3, 5, "Checking installed mod...");
     string modDir = Path.Combine(gamePath, "BepInEx", "plugins", "AutonautsMP");
     string modPath = Path.Combine(modDir, MOD_DLL);
     string versionPath = Path.Combine(modDir, "version.txt");
@@ -77,18 +82,19 @@ try
     {
         installedVersion = GetInstalledVersion(versionPath);
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"  Installed version: {installedVersion ?? "unknown"}");
+        Console.WriteLine($"    Installed: v{installedVersion ?? "unknown"}");
         Console.ResetColor();
     }
     else
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("  Mod not installed yet");
+        Console.WriteLine("    Not installed yet");
         Console.ResetColor();
     }
+    Console.WriteLine();
 
-    // Check for local files (bundled with installer) or GitHub updates
-    Console.WriteLine("\n[4/5] Checking for updates...");
+    // Step 4: Check for local files (bundled with installer) or GitHub updates
+    PrintStep(4, 5, "Checking for updates...");
     
     string? localVersion = GetLocalVersion();
     var (remoteVersion, downloadUrl, releaseNotes) = await GetLatestRelease();
@@ -104,74 +110,65 @@ try
         {
             sourceVersion = localVersion;
             useLocal = true;
-            Console.WriteLine($"  Local version: {localVersion}");
-            Console.WriteLine($"  Remote version: {remoteVersion}");
         }
         else
         {
             sourceVersion = remoteVersion;
-            Console.WriteLine($"  Local version: {localVersion}");
-            Console.WriteLine($"  Remote version: {remoteVersion} (newer)");
         }
+        Console.WriteLine($"    Local: v{localVersion}  |  Remote: v{remoteVersion}");
     }
     else if (localVersion != null)
     {
         sourceVersion = localVersion;
         useLocal = true;
-        Console.WriteLine($"  Local version: {localVersion}");
+        Console.WriteLine($"    Local: v{localVersion}");
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("  Could not check GitHub for updates");
+        Console.WriteLine("    (Could not reach GitHub)");
         Console.ResetColor();
     }
     else if (remoteVersion != null)
     {
         sourceVersion = remoteVersion;
-        Console.WriteLine($"  Remote version: {remoteVersion}");
+        Console.WriteLine($"    Latest: v{remoteVersion}");
     }
     else
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("ERROR: No mod files found locally or on GitHub.");
+        Console.WriteLine("    ERROR: No mod files found locally or on GitHub.");
         Console.ResetColor();
         WaitAndExit(1);
         return;
     }
+    Console.WriteLine();
 
     // Check if update needed
     bool needsUpdate = installedVersion == null || CompareVersions(sourceVersion, installedVersion) > 0;
     
     if (!needsUpdate)
     {
-        Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("╔══════════════════════════════════════════════════════╗");
-        Console.WriteLine("║           YOU HAVE THE LATEST VERSION!               ║");
-        Console.WriteLine("╚══════════════════════════════════════════════════════╝");
+        Console.WriteLine("  You have the latest version!");
         Console.ResetColor();
+        Console.WriteLine();
         
+        CreateOrUpdateShortcut(modDir);
         AskToLaunchGame(gamePath);
         WaitAndExit(0);
         return;
     }
 
-    // Show what's happening
-    Console.WriteLine("\n[5/5] Installing...");
-    Console.ForegroundColor = ConsoleColor.Cyan;
-    if (installedVersion == null)
-        Console.WriteLine($"  Installing v{sourceVersion}");
-    else
-        Console.WriteLine($"  Updating: v{installedVersion} → v{sourceVersion}");
-    Console.ResetColor();
+    // Step 5: Installing
+    PrintStep(5, 5, installedVersion == null 
+        ? $"Installing v{sourceVersion}..." 
+        : $"Updating v{installedVersion} -> v{sourceVersion}...");
     
     if (!useLocal && !string.IsNullOrWhiteSpace(releaseNotes))
     {
-        Console.WriteLine("\n  What's new:");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        var lines = releaseNotes.Split('\n').Take(5);
+        Console.WriteLine("    What's new:");
+        var lines = releaseNotes.Split('\n').Take(3);
         foreach (var line in lines)
-            Console.WriteLine($"    {line.Trim()}");
-        if (releaseNotes.Split('\n').Length > 5)
-            Console.WriteLine("    ...");
+            Console.WriteLine($"      {line.Trim()}");
         Console.ResetColor();
     }
 
@@ -197,20 +194,29 @@ try
     if (Directory.Exists(cachePath))
     {
         Directory.Delete(cachePath, true);
-        Console.WriteLine("  Cache cleared");
+        Console.WriteLine("    Cache cleared");
     }
-
-    // Done
-    Console.WriteLine();
     Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("╔══════════════════════════════════════════════════════╗");
-    Console.WriteLine("║        INSTALLATION COMPLETED SUCCESSFULLY!          ║");
-    Console.WriteLine("╚══════════════════════════════════════════════════════╝");
+    Console.WriteLine("    Done!");
     Console.ResetColor();
     Console.WriteLine();
-    Console.WriteLine("Press F10 or click 'MP' button in-game to open multiplayer!");
     
-    AskToCreateShortcut();
+    // Create shortcut before showing success
+    CreateOrUpdateShortcut(modDir);
+    Console.WriteLine();
+
+    // Success message
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine("  ╔═══════════════════════════════════════╗");
+    Console.WriteLine("  ║                                       ║");
+    Console.WriteLine("  ║       INSTALLATION COMPLETE!          ║");
+    Console.WriteLine("  ║                                       ║");
+    Console.WriteLine("  ╚═══════════════════════════════════════╝");
+    Console.ResetColor();
+    Console.WriteLine();
+    Console.WriteLine("  Press F10 or click 'AMP' button in-game to open multiplayer.");
+    Console.WriteLine();
+    
     AskToLaunchGame(gamePath);
 }
 catch (HttpRequestException ex)
@@ -230,6 +236,48 @@ WaitAndExit(0);
 
 // ============ Helper Methods ============
 
+// Windows API for disabling resize
+[DllImport("kernel32.dll", ExactSpelling = true)]
+static extern IntPtr GetConsoleWindow();
+
+[DllImport("user32.dll")]
+static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert);
+
+[DllImport("user32.dll")]
+static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags);
+
+const uint SC_SIZE = 0xF000;
+const uint SC_MAXIMIZE = 0xF030;
+const uint MF_BYCOMMAND = 0x00000000;
+
+void SetupConsoleWindow()
+{
+    try
+    {
+        // Set fixed console size
+        Console.SetWindowSize(80, 30);
+        Console.SetBufferSize(80, 300);
+        
+        // Disable resize and maximize
+        IntPtr handle = GetConsoleWindow();
+        IntPtr sysMenu = GetSystemMenu(handle, false);
+        if (sysMenu != IntPtr.Zero)
+        {
+            DeleteMenu(sysMenu, SC_SIZE, MF_BYCOMMAND);
+            DeleteMenu(sysMenu, SC_MAXIMIZE, MF_BYCOMMAND);
+        }
+    }
+    catch { } // Ignore errors on non-Windows or if console APIs fail
+}
+
+void PrintStep(int step, int total, string task)
+{
+    Console.ForegroundColor = ConsoleColor.DarkGray;
+    Console.Write($"[{step}/{total}] ");
+    Console.ResetColor();
+    Console.WriteLine(task);
+}
+
 void PrintBanner()
 {
     Console.ForegroundColor = ConsoleColor.Cyan;
@@ -241,8 +289,8 @@ void PrintBanner()
  /_/   \_\__,_|\__\___/|_| |_|\__,_|\__,_|\__|___/_|  |_|_|    
 ");
     Console.ResetColor();
-    Console.WriteLine("  Installer & Updater");
-    Console.WriteLine("  Installs BepInEx + AutonautsMP, checks for updates\n");
+    Console.WriteLine("  Authors: mitchellcirey + DMarie68");
+    Console.WriteLine("  Installer & Updater for AutonautsMP & BepInEx\n");
 }
 
 string? GetInstalledVersion(string versionFilePath)
@@ -288,6 +336,15 @@ void InstallFromLocal(string modDir)
         File.Copy(dll, destPath, overwrite: true);
     }
     
+    // Copy exe (the installer itself)
+    foreach (var exe in Directory.GetFiles(here, "*.exe"))
+    {
+        string fileName = Path.GetFileName(exe);
+        string destPath = Path.Combine(modDir, fileName);
+        Console.WriteLine($"  Installing: {fileName}");
+        File.Copy(exe, destPath, overwrite: true);
+    }
+    
     // Copy version.txt
     string versionSource = Path.Combine(here, "version.txt");
     if (File.Exists(versionSource))
@@ -327,6 +384,16 @@ async Task InstallFromGitHub(string downloadUrl, string modDir)
             string destPath = Path.Combine(modDir, fileName);
             Console.WriteLine($"  Installing: {fileName}");
             File.Copy(dll, destPath, overwrite: true);
+        }
+        
+        // Copy exe (the installer itself)
+        var exeFiles = Directory.GetFiles(tempExtract, "*.exe", SearchOption.AllDirectories);
+        foreach (var exe in exeFiles)
+        {
+            string fileName = Path.GetFileName(exe);
+            string destPath = Path.Combine(modDir, fileName);
+            Console.WriteLine($"  Installing: {fileName}");
+            File.Copy(exe, destPath, overwrite: true);
         }
         
         // Copy version.txt
@@ -501,49 +568,27 @@ void CloseGameIfRunning()
     }
 }
 
-void AskToCreateShortcut()
+void CreateOrUpdateShortcut(string modDir)
 {
-    // Check if shortcut already exists
-    string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-    string shortcutPath = Path.Combine(desktopPath, "AutonautsMP.lnk");
-    
-    if (File.Exists(shortcutPath))
-        return; // Already have shortcut
-    
-    Console.WriteLine();
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("Create desktop shortcut for easy updates? [Y/N]: ");
-    Console.ResetColor();
-    
-    while (true)
-    {
-        var key = Console.ReadKey(true).Key;
-        if (key == ConsoleKey.Y)
-        {
-            Console.WriteLine("Y");
-            CreateDesktopShortcut();
-            break;
-        }
-        else if (key == ConsoleKey.N)
-        {
-            Console.WriteLine("N");
-            break;
-        }
-    }
+    // Always create/update the shortcut to ensure it points to the right location
+    CreateDesktopShortcut(modDir);
 }
 
-void CreateDesktopShortcut()
+void CreateDesktopShortcut(string modDir)
 {
     try
     {
         string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         string shortcutPath = Path.Combine(desktopPath, "AutonautsMP.lnk");
-        string targetPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
+        // Point to the exe in the install folder, not wherever it's currently running from
+        string targetPath = Path.Combine(modDir, "AutonautsMP.exe");
         
-        if (string.IsNullOrEmpty(targetPath))
+        bool existed = File.Exists(shortcutPath);
+        
+        if (!File.Exists(targetPath))
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("  Could not determine executable path");
+            Console.WriteLine("  Exe not found in install folder yet");
             Console.ResetColor();
             return;
         }
@@ -553,7 +598,7 @@ void CreateDesktopShortcut()
 $ws = New-Object -ComObject WScript.Shell
 $shortcut = $ws.CreateShortcut('{shortcutPath.Replace("'", "''")}')
 $shortcut.TargetPath = '{targetPath.Replace("'", "''")}'
-$shortcut.WorkingDirectory = '{Path.GetDirectoryName(targetPath)?.Replace("'", "''")}'
+$shortcut.WorkingDirectory = '{modDir.Replace("'", "''")}'
 $shortcut.Description = 'AutonautsMP Installer & Updater'
 $shortcut.Save()
 ";
@@ -573,8 +618,8 @@ $shortcut.Save()
         
         if (File.Exists(shortcutPath))
         {
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("  Desktop shortcut created!");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine(existed ? "Desktop shortcut updated." : "Desktop shortcut created.");
             Console.ResetColor();
         }
         else
