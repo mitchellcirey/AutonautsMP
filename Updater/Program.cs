@@ -606,7 +606,7 @@ void AskToLaunchGame(string gamePath)
         {
             Console.WriteLine("Y");
             Console.WriteLine("\nLaunching Autonauts...");
-            LaunchGame(gamePath);
+            LaunchGame();
             break;
         }
         else if (key == ConsoleKey.N)
@@ -615,25 +615,25 @@ void AskToLaunchGame(string gamePath)
             break;
         }
     }
+    
+    // Countdown to close
+    CountdownAndExit();
 }
 
-void LaunchGame(string gamePath)
+void LaunchGame()
 {
     try
     {
-        string exePath = Path.Combine(gamePath, "Autonauts.exe");
-        if (File.Exists(exePath))
+        // Launch via Steam to avoid the close/relaunch issue
+        // Autonauts Steam App ID: 979120
+        Process.Start(new ProcessStartInfo
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = exePath,
-                WorkingDirectory = gamePath,
-                UseShellExecute = true
-            });
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("Game launched!");
-            Console.ResetColor();
-        }
+            FileName = "steam://rungameid/979120",
+            UseShellExecute = true
+        });
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("Game launched!");
+        Console.ResetColor();
     }
     catch (Exception ex)
     {
@@ -641,6 +641,18 @@ void LaunchGame(string gamePath)
         Console.WriteLine($"Failed to launch: {ex.Message}");
         Console.ResetColor();
     }
+}
+
+void CountdownAndExit()
+{
+    Console.WriteLine();
+    for (int i = 10; i > 0; i--)
+    {
+        Console.Write($"\rClosing in {i}...  ");
+        Thread.Sleep(1000);
+    }
+    Console.WriteLine("\rClosing...        ");
+    Environment.Exit(0);
 }
 
 void WaitAndExit(int code)
