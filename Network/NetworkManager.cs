@@ -352,6 +352,9 @@ namespace AutonautsMP.Network
                             DebugLogger.Info($"Player {clientId} name: {playerName}");
                             DebugConsole.LogInfo($"{playerName} has joined");
                             OnPlayerListUpdated?.Invoke();
+                            
+                            // Broadcast updated player list to all clients
+                            BroadcastPlayerList();
                         }
                     }
                     break;
@@ -448,13 +451,63 @@ namespace AutonautsMP.Network
                     break;
                     
                 case NetMessageType.PlayerList:
-                    // Server sent updated player list (future feature)
+                    HandlePlayerListUpdate(data);
                     break;
                     
                 default:
                     // Other data - pass to event handlers
                     OnDataReceived?.Invoke(0, data);
                     break;
+            }
+        }
+        
+        /// <summary>
+        /// Handle player list update from the server.
+        /// Updates the local _players dictionary with all connected players.
+        /// </summary>
+        private void HandlePlayerListUpdate(byte[] data)
+        {
+            if (data == null || data.Length < 5) return;
+            
+            try
+            {
+                using (var ms = new System.IO.MemoryStream(data))
+                using (var reader = new System.IO.BinaryReader(ms))
+                {
+                    reader.ReadByte(); // Skip message type
+                    int count = reader.ReadInt32();
+                    
+                    // Clear existing players (except self)
+                    _players.Clear();
+                    
+                    for (int i = 0; i < count; i++)
+                    {
+                        int connectionId = reader.ReadInt32();
+                        bool isHost = reader.ReadBoolean();
+                        string name = reader.ReadString();
+                        int ping = reader.ReadInt32();
+                        
+                        // Skip self (we're connection 0 from client perspective, but server sends our actual ID)
+                        // We identify ourselves by checking if connectionId matches what server assigned us
+                        // For now, the client doesn't know its own ID, so we skip based on local player check
+                        
+                        // Add to players dict (including host)
+                        if (connectionId != 0) // Don't add ourselves
+                        {
+                            _players[connectionId] = new PlayerInfo(connectionId, name, isHost)
+                            {
+                                Ping = ping
+                            };
+                        }
+                    }
+                    
+                    DebugLogger.Info($"Received player list: {count} total players, {_players.Count} remote players");
+                    OnPlayerListUpdated?.Invoke();
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Error($"Failed to parse player list: {ex.Message}");
             }
         }
         
@@ -530,6 +583,41 @@ namespace AutonautsMP.Network
                     _server.Send(clientId, data);
                     _packetsSentThisSecond++;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Broadcast the current player list to all connected clients.
+        /// Called when a player joins or leaves.
+        /// </summary>
+        private void BroadcastPlayerList()
+        {
+            if (_state != ConnectionState.Hosting) return;
+            
+            // Build list of all players (host + clients)
+            var allPlayers = GetAllPlayers();
+            
+            // Build packet using internal message type
+            // Format: [NetMessageType.PlayerList:1][Count:4][Player1...PlayerN]
+            // Each player: [ConnectionId:4][IsHost:1][NameLength:4][Name:bytes][Ping:4]
+            using (var ms = new System.IO.MemoryStream())
+            using (var writer = new System.IO.BinaryWriter(ms))
+            {
+                writer.Write((byte)NetMessageType.PlayerList);
+                writer.Write(allPlayers.Count);
+                
+                foreach (var player in allPlayers)
+                {
+                    writer.Write(player.ConnectionId);
+                    writer.Write(player.IsHost);
+                    writer.Write(player.Name);
+                    writer.Write(player.Ping);
+                }
+                
+                var packet = ms.ToArray();
+                Broadcast(packet);
+                
+                DebugLogger.Info($"Broadcasted player list: {allPlayers.Count} players");
             }
         }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
@@ -151,6 +152,57 @@ namespace AutonautsMP.Network
         }
 
         /// <summary>
+        /// Build a player list message (host to clients).
+        /// Format: [PlayerList:1][Count:4][Player1...PlayerN]
+        /// Each player: [ConnectionId:4][IsHost:1][Name:string][Ping:4]
+        /// </summary>
+        public static byte[] BuildPlayerList(List<PlayerListEntry> players)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
+            {
+                writer.Write((byte)MessageType.PlayerList);
+                writer.Write(players.Count);
+                
+                foreach (var player in players)
+                {
+                    writer.Write(player.ConnectionId);
+                    writer.Write(player.IsHost);
+                    writer.Write(player.Name);
+                    writer.Write(player.Ping);
+                }
+                
+                return ms.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Read a player list message.
+        /// </summary>
+        public static List<PlayerListEntry> ReadPlayerList(byte[] data)
+        {
+            var players = new List<PlayerListEntry>();
+            
+            using (var reader = CreateReader(data))
+            {
+                int count = reader.ReadInt32();
+                
+                for (int i = 0; i < count; i++)
+                {
+                    players.Add(new PlayerListEntry
+                    {
+                        ConnectionId = reader.ReadInt32(),
+                        IsHost = reader.ReadBoolean(),
+                        Name = reader.ReadString(),
+                        Ping = reader.ReadInt32()
+                    });
+                }
+            }
+            
+            return players;
+        }
+
+        /// <summary>
         /// Read message type from packet.
         /// </summary>
         public static MessageType ReadType(byte[] data)
@@ -237,5 +289,16 @@ namespace AutonautsMP.Network
                 };
             }
         }
+    }
+
+    /// <summary>
+    /// Entry in the player list message.
+    /// </summary>
+    public struct PlayerListEntry
+    {
+        public int ConnectionId;
+        public bool IsHost;
+        public string Name;
+        public int Ping;
     }
 }
