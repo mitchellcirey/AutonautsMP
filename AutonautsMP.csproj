@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <Compile Remove="Installer\**" />
     <Compile Remove="Updater\**" />
   </ItemGroup>
 

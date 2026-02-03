@@ -6,21 +6,21 @@ using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 // ============ CONFIGURATION ============
-// TODO: Update these with your actual GitHub repository details
 const string GITHUB_OWNER = "mitchellcirey";
 const string GITHUB_REPO = "AutonautsMP";
 // =======================================
 
 const string MOD_NAME = "AutonautsMP";
 const string MOD_DLL = "AutonautsMP.dll";
+const string BEPINEX_URL = "https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInEx_x64_5.4.22.0.zip";
 
-Console.Title = $"{MOD_NAME} Updater";
+Console.Title = MOD_NAME;
 PrintBanner();
 
 try
 {
-    // Find installed mod
-    Console.WriteLine("[1/4] Locating installed mod...");
+    // Find game
+    Console.WriteLine("[1/5] Locating Autonauts...");
     string? gamePath = FindGamePath();
     
     if (gamePath == null)
@@ -36,12 +36,38 @@ try
     if (string.IsNullOrEmpty(gamePath) || !File.Exists(Path.Combine(gamePath, "Autonauts.exe")))
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("ERROR: Autonauts not found.");
+        Console.WriteLine("ERROR: Autonauts.exe not found.");
         Console.ResetColor();
         WaitAndExit(1);
         return;
     }
     
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine($"  Found: {gamePath}");
+    Console.ResetColor();
+
+    // Check/Install BepInEx
+    Console.WriteLine("\n[2/5] Checking BepInEx...");
+    string bepinexCore = Path.Combine(gamePath, "BepInEx", "core");
+    string winhttp = Path.Combine(gamePath, "winhttp.dll");
+    
+    if (Directory.Exists(bepinexCore) && File.Exists(winhttp))
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("  BepInEx already installed");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.WriteLine("  Downloading BepInEx 5.4.22...");
+        await InstallBepInEx(gamePath);
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("  BepInEx installed!");
+        Console.ResetColor();
+    }
+
+    // Check installed version
+    Console.WriteLine("\n[3/5] Checking installed mod...");
     string modDir = Path.Combine(gamePath, "BepInEx", "plugins", "AutonautsMP");
     string modPath = Path.Combine(modDir, MOD_DLL);
     string versionPath = Path.Combine(modDir, "version.txt");
@@ -51,7 +77,6 @@ try
     {
         installedVersion = GetInstalledVersion(versionPath);
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"  Found: {modPath}");
         Console.WriteLine($"  Installed version: {installedVersion ?? "unknown"}");
         Console.ResetColor();
     }
@@ -62,183 +87,135 @@ try
         Console.ResetColor();
     }
 
-    // Check GitHub for latest release
-    Console.WriteLine("\n[2/4] Checking for updates...");
-    var (latestVersion, downloadUrl, releaseNotes) = await GetLatestRelease();
+    // Check for local files (bundled with installer) or GitHub updates
+    Console.WriteLine("\n[4/5] Checking for updates...");
     
-    if (latestVersion == null || downloadUrl == null)
+    string? localVersion = GetLocalVersion();
+    var (remoteVersion, downloadUrl, releaseNotes) = await GetLatestRelease();
+    
+    // Determine best source
+    string? sourceVersion = null;
+    bool useLocal = false;
+    
+    if (localVersion != null && remoteVersion != null)
+    {
+        // Both available - use whichever is newer
+        if (CompareVersions(localVersion, remoteVersion) >= 0)
+        {
+            sourceVersion = localVersion;
+            useLocal = true;
+            Console.WriteLine($"  Local version: {localVersion}");
+            Console.WriteLine($"  Remote version: {remoteVersion}");
+        }
+        else
+        {
+            sourceVersion = remoteVersion;
+            Console.WriteLine($"  Local version: {localVersion}");
+            Console.WriteLine($"  Remote version: {remoteVersion} (newer)");
+        }
+    }
+    else if (localVersion != null)
+    {
+        sourceVersion = localVersion;
+        useLocal = true;
+        Console.WriteLine($"  Local version: {localVersion}");
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("  Could not check GitHub for updates");
+        Console.ResetColor();
+    }
+    else if (remoteVersion != null)
+    {
+        sourceVersion = remoteVersion;
+        Console.WriteLine($"  Remote version: {remoteVersion}");
+    }
+    else
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("ERROR: Could not fetch release information from GitHub.");
-        Console.WriteLine("Make sure the repository has at least one release with a ZIP asset.");
+        Console.WriteLine("ERROR: No mod files found locally or on GitHub.");
         Console.ResetColor();
         WaitAndExit(1);
         return;
     }
-    
-    Console.WriteLine($"  Latest version: {latestVersion}");
-    
-    // Compare versions
-    Console.WriteLine("\n[3/4] Comparing versions...");
-    bool needsUpdate = installedVersion == null || CompareVersions(latestVersion, installedVersion) > 0;
+
+    // Check if update needed
+    bool needsUpdate = installedVersion == null || CompareVersions(sourceVersion, installedVersion) > 0;
     
     if (!needsUpdate)
     {
+        Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("╔══════════════════════════════════════════════════════╗");
         Console.WriteLine("║           YOU HAVE THE LATEST VERSION!               ║");
         Console.WriteLine("╚══════════════════════════════════════════════════════╝");
         Console.ResetColor();
+        
+        AskToLaunchGame(gamePath);
         WaitAndExit(0);
         return;
     }
-    
-    // Show what's new
+
+    // Show what's happening
+    Console.WriteLine("\n[5/5] Installing...");
     Console.ForegroundColor = ConsoleColor.Cyan;
     if (installedVersion == null)
-        Console.WriteLine($"  New installation: v{latestVersion}");
+        Console.WriteLine($"  Installing v{sourceVersion}");
     else
-        Console.WriteLine($"  Update available: v{installedVersion} → v{latestVersion}");
+        Console.WriteLine($"  Updating: v{installedVersion} → v{sourceVersion}");
     Console.ResetColor();
     
-    if (!string.IsNullOrWhiteSpace(releaseNotes))
+    if (!useLocal && !string.IsNullOrWhiteSpace(releaseNotes))
     {
         Console.WriteLine("\n  What's new:");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        // Show first few lines of release notes
         var lines = releaseNotes.Split('\n').Take(5);
         foreach (var line in lines)
-        {
             Console.WriteLine($"    {line.Trim()}");
-        }
         if (releaseNotes.Split('\n').Length > 5)
             Console.WriteLine("    ...");
         Console.ResetColor();
     }
-    
-    // Ask for confirmation
-    Console.WriteLine();
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("Download and install update? [Y/N]: ");
-    Console.ResetColor();
-    
-    while (true)
-    {
-        var key = Console.ReadKey(true).Key;
-        if (key == ConsoleKey.Y)
-        {
-            Console.WriteLine("Y");
-            break;
-        }
-        else if (key == ConsoleKey.N)
-        {
-            Console.WriteLine("N");
-            Console.WriteLine("\nUpdate cancelled.");
-            WaitAndExit(0);
-            return;
-        }
-    }
 
     // Close game if running
-    Console.WriteLine("\n[4/4] Installing update...");
     CloseGameIfRunning();
     
-    // Download and install
-    Console.WriteLine("  Downloading...");
-    string tempZip = Path.Combine(Path.GetTempPath(), $"{MOD_NAME}_update.zip");
+    // Install from local or download
+    Directory.CreateDirectory(modDir);
     
-    try
+    if (useLocal)
     {
-        using var http = new HttpClient();
-        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(MOD_NAME, latestVersion.ToString()));
-        
-        var response = await http.GetAsync(downloadUrl);
-        response.EnsureSuccessStatusCode();
-        
-        var bytes = await response.Content.ReadAsByteArrayAsync();
-        await File.WriteAllBytesAsync(tempZip, bytes);
-        
-        Console.WriteLine("  Extracting...");
-        string tempExtract = Path.Combine(Path.GetTempPath(), $"{MOD_NAME}_update");
-        if (Directory.Exists(tempExtract))
-            Directory.Delete(tempExtract, true);
-        
-        ZipFile.ExtractToDirectory(tempZip, tempExtract);
-        
-        // Find and copy mod files
-        Directory.CreateDirectory(modDir);
-        
-        // Look for mod files in the extracted archive
-        var dllFiles = Directory.GetFiles(tempExtract, "*.dll", SearchOption.AllDirectories);
-        foreach (var dll in dllFiles)
-        {
-            string fileName = Path.GetFileName(dll);
-            string destPath = Path.Combine(modDir, fileName);
-            Console.WriteLine($"  Installing: {fileName}");
-            File.Copy(dll, destPath, overwrite: true);
-        }
-        
-        // Copy version.txt if present
-        var versionFiles = Directory.GetFiles(tempExtract, "version.txt", SearchOption.AllDirectories);
-        foreach (var vf in versionFiles)
-        {
-            string destPath = Path.Combine(modDir, "version.txt");
-            File.Copy(vf, destPath, overwrite: true);
-        }
-        
-        // Clear BepInEx cache
-        string cachePath = Path.Combine(gamePath, "BepInEx", "cache");
-        if (Directory.Exists(cachePath))
-        {
-            Directory.Delete(cachePath, true);
-            Console.WriteLine("  Cache cleared");
-        }
-        
-        // Cleanup
-        Directory.Delete(tempExtract, true);
+        // Install from local files
+        InstallFromLocal(modDir);
     }
-    finally
+    else
     {
-        if (File.Exists(tempZip))
-            File.Delete(tempZip);
+        // Download and install from GitHub
+        await InstallFromGitHub(downloadUrl!, modDir);
+    }
+
+    // Clear BepInEx cache
+    string cachePath = Path.Combine(gamePath, "BepInEx", "cache");
+    if (Directory.Exists(cachePath))
+    {
+        Directory.Delete(cachePath, true);
+        Console.WriteLine("  Cache cleared");
     }
 
     // Done
     Console.WriteLine();
     Console.ForegroundColor = ConsoleColor.Green;
     Console.WriteLine("╔══════════════════════════════════════════════════════╗");
-    Console.WriteLine("║            UPDATE INSTALLED SUCCESSFULLY!            ║");
+    Console.WriteLine("║        INSTALLATION COMPLETED SUCCESSFULLY!          ║");
     Console.WriteLine("╚══════════════════════════════════════════════════════╝");
     Console.ResetColor();
     Console.WriteLine();
+    Console.WriteLine("Press F10 or click 'MP' button in-game to open multiplayer!");
     
-    // Ask if user wants to launch the game
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("Would you like to launch Autonauts now? [Y/N]: ");
-    Console.ResetColor();
-    
-    while (true)
-    {
-        var key = Console.ReadKey(true).Key;
-        if (key == ConsoleKey.Y)
-        {
-            Console.WriteLine("Y");
-            Console.WriteLine("\nLaunching Autonauts...");
-            LaunchGame(gamePath);
-            break;
-        }
-        else if (key == ConsoleKey.N)
-        {
-            Console.WriteLine("N");
-            break;
-        }
-    }
+    AskToLaunchGame(gamePath);
 }
 catch (HttpRequestException ex)
 {
     Console.ForegroundColor = ConsoleColor.Red;
     Console.WriteLine($"ERROR: Network error - {ex.Message}");
-    Console.WriteLine("Check your internet connection and try again.");
     Console.ResetColor();
 }
 catch (Exception ex)
@@ -263,8 +240,8 @@ void PrintBanner()
  /_/   \_\__,_|\__\___/|_| |_|\__,_|\__,_|\__|___/_|  |_|_|    
 ");
     Console.ResetColor();
-    Console.WriteLine("  Auto-Updater v1.0");
-    Console.WriteLine("  Checks GitHub for the latest release\n");
+    Console.WriteLine("  Installer & Updater");
+    Console.WriteLine("  Installs BepInEx + AutonautsMP, checks for updates\n");
 }
 
 string? GetInstalledVersion(string versionFilePath)
@@ -278,9 +255,113 @@ string? GetInstalledVersion(string versionFilePath)
     return null;
 }
 
+string? GetLocalVersion()
+{
+    // Check for version.txt in same folder as this exe
+    string here = AppContext.BaseDirectory;
+    string versionFile = Path.Combine(here, "version.txt");
+    string dllFile = Path.Combine(here, MOD_DLL);
+    
+    if (File.Exists(versionFile) && File.Exists(dllFile))
+    {
+        try { return File.ReadAllText(versionFile).Trim(); }
+        catch { }
+    }
+    return null;
+}
+
+void InstallFromLocal(string modDir)
+{
+    string here = AppContext.BaseDirectory;
+    
+    // Copy DLLs
+    foreach (var dll in Directory.GetFiles(here, "*.dll"))
+    {
+        string fileName = Path.GetFileName(dll);
+        // Skip system DLLs that might be in the folder
+        if (fileName.StartsWith("System.") || fileName.StartsWith("Microsoft."))
+            continue;
+            
+        string destPath = Path.Combine(modDir, fileName);
+        Console.WriteLine($"  Installing: {fileName}");
+        File.Copy(dll, destPath, overwrite: true);
+    }
+    
+    // Copy version.txt
+    string versionSource = Path.Combine(here, "version.txt");
+    if (File.Exists(versionSource))
+    {
+        File.Copy(versionSource, Path.Combine(modDir, "version.txt"), overwrite: true);
+    }
+}
+
+async Task InstallFromGitHub(string downloadUrl, string modDir)
+{
+    Console.WriteLine("  Downloading...");
+    string tempZip = Path.Combine(Path.GetTempPath(), $"{MOD_NAME}_update.zip");
+    
+    try
+    {
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(MOD_NAME, "1.0"));
+        
+        var response = await http.GetAsync(downloadUrl);
+        response.EnsureSuccessStatusCode();
+        
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        await File.WriteAllBytesAsync(tempZip, bytes);
+        
+        Console.WriteLine("  Extracting...");
+        string tempExtract = Path.Combine(Path.GetTempPath(), $"{MOD_NAME}_update");
+        if (Directory.Exists(tempExtract))
+            Directory.Delete(tempExtract, true);
+        
+        ZipFile.ExtractToDirectory(tempZip, tempExtract);
+        
+        // Copy DLLs
+        var dllFiles = Directory.GetFiles(tempExtract, "*.dll", SearchOption.AllDirectories);
+        foreach (var dll in dllFiles)
+        {
+            string fileName = Path.GetFileName(dll);
+            string destPath = Path.Combine(modDir, fileName);
+            Console.WriteLine($"  Installing: {fileName}");
+            File.Copy(dll, destPath, overwrite: true);
+        }
+        
+        // Copy version.txt
+        var versionFiles = Directory.GetFiles(tempExtract, "version.txt", SearchOption.AllDirectories);
+        foreach (var vf in versionFiles)
+        {
+            File.Copy(vf, Path.Combine(modDir, "version.txt"), overwrite: true);
+        }
+        
+        Directory.Delete(tempExtract, true);
+    }
+    finally
+    {
+        if (File.Exists(tempZip))
+            File.Delete(tempZip);
+    }
+}
+
+async Task InstallBepInEx(string gamePath)
+{
+    string tempZip = Path.Combine(Path.GetTempPath(), "BepInEx_5.4.22.zip");
+    try
+    {
+        using var http = new HttpClient();
+        var bytes = await http.GetByteArrayAsync(BEPINEX_URL);
+        await File.WriteAllBytesAsync(tempZip, bytes);
+        ZipFile.ExtractToDirectory(tempZip, gamePath, overwriteFiles: true);
+    }
+    finally
+    {
+        if (File.Exists(tempZip)) File.Delete(tempZip);
+    }
+}
+
 int CompareVersions(string v1, string v2)
 {
-    // Compare semantic versions like "1.0.0" vs "1.2.3"
     var parts1 = v1.Split('.').Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
     var parts2 = v2.Split('.').Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
     
@@ -307,21 +388,17 @@ async Task<(string? version, string? downloadUrl, string? releaseNotes)> GetLate
         using var doc = JsonDocument.Parse(response);
         var root = doc.RootElement;
         
-        // Get version from tag name (strip 'v' prefix if present)
         string tagName = root.GetProperty("tag_name").GetString() ?? "";
         string? version = tagName.TrimStart('v', 'V');
         
-        // Try to extract version from tag like "release-1.2.3" if needed
         if (string.IsNullOrEmpty(version) || !char.IsDigit(version[0]))
         {
             var match = Regex.Match(tagName, @"(\d+\.\d+\.\d+)");
             version = match.Success ? match.Groups[1].Value : null;
         }
         
-        // Get release notes
         string? releaseNotes = root.GetProperty("body").GetString();
         
-        // Find ZIP asset
         string? downloadUrl = null;
         if (root.TryGetProperty("assets", out var assets))
         {
@@ -336,26 +413,13 @@ async Task<(string? version, string? downloadUrl, string? releaseNotes)> GetLate
             }
         }
         
-        // Fallback to zipball if no ZIP asset
         if (downloadUrl == null)
-        {
             downloadUrl = root.GetProperty("zipball_url").GetString();
-        }
         
         return (version, downloadUrl, releaseNotes);
     }
-    catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+    catch
     {
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("  No releases found on GitHub yet.");
-        Console.ResetColor();
-        return (null, null, null);
-    }
-    catch (Exception ex)
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine($"  Failed to check GitHub: {ex.Message}");
-        Console.ResetColor();
         return (null, null, null);
     }
 }
@@ -374,7 +438,6 @@ string? FindGamePath()
         if (Directory.Exists(p) && File.Exists(Path.Combine(p, "Autonauts.exe")))
             return p;
     
-    // Try Steam registry
     try
     {
         string? steamPath = Registry.GetValue(
@@ -411,7 +474,7 @@ void CloseGameIfRunning()
         foreach (var p in processes) p.Dispose();
         
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("  Autonauts is running - closing...");
+        Console.WriteLine("\n  Autonauts is running - closing...");
         Console.ResetColor();
         
         processes = Process.GetProcessesByName("Autonauts");
@@ -434,6 +497,31 @@ void CloseGameIfRunning()
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("  Game closed");
         Console.ResetColor();
+    }
+}
+
+void AskToLaunchGame(string gamePath)
+{
+    Console.WriteLine();
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.Write("Would you like to launch Autonauts now? [Y/N]: ");
+    Console.ResetColor();
+    
+    while (true)
+    {
+        var key = Console.ReadKey(true).Key;
+        if (key == ConsoleKey.Y)
+        {
+            Console.WriteLine("Y");
+            Console.WriteLine("\nLaunching Autonauts...");
+            LaunchGame(gamePath);
+            break;
+        }
+        else if (key == ConsoleKey.N)
+        {
+            Console.WriteLine("N");
+            break;
+        }
     }
 }
 
