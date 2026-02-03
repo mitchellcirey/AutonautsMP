@@ -35,6 +35,9 @@ namespace AutonautsMP.Network
         ObjectPlaced = 51,
         ObjectRemoved = 52,
 
+        // Player sync messages
+        PlayerTransform = 60,   // Position/rotation update
+
         // Ping/Pong
         Ping = 100,
         Pong = 101,
@@ -130,6 +133,24 @@ namespace AutonautsMP.Network
         }
 
         /// <summary>
+        /// Build a player transform update message.
+        /// </summary>
+        public static byte[] BuildPlayerTransform(int playerId, float x, float y, float z, float rotY)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new BinaryWriter(ms))
+            {
+                writer.Write((byte)MessageType.PlayerTransform);
+                writer.Write(playerId);
+                writer.Write(x);
+                writer.Write(y);
+                writer.Write(z);
+                writer.Write(rotY);
+                return ms.ToArray();
+            }
+        }
+
+        /// <summary>
         /// Read message type from packet.
         /// </summary>
         public static MessageType ReadType(byte[] data)
@@ -186,6 +207,33 @@ namespace AutonautsMP.Network
                 {
                     Sender = reader.ReadString(),
                     Message = reader.ReadString()
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parsed player transform data.
+    /// </summary>
+    public struct PlayerTransformData
+    {
+        public int PlayerId;
+        public float X;
+        public float Y;
+        public float Z;
+        public float RotY;
+
+        public static PlayerTransformData Read(byte[] data)
+        {
+            using (var reader = NetworkMessages.CreateReader(data))
+            {
+                return new PlayerTransformData
+                {
+                    PlayerId = reader.ReadInt32(),
+                    X = reader.ReadSingle(),
+                    Y = reader.ReadSingle(),
+                    Z = reader.ReadSingle(),
+                    RotY = reader.ReadSingle()
                 };
             }
         }

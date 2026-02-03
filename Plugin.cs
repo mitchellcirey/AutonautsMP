@@ -1,7 +1,10 @@
 using BepInEx;
+using HarmonyLib;
 using UnityEngine;
 using AutonautsMP.Core;
 using AutonautsMP.Network;
+using AutonautsMP.Patches;
+using AutonautsMP.Sync;
 using AutonautsMP.UI;
 
 namespace AutonautsMP
@@ -19,6 +22,7 @@ namespace AutonautsMP
         // State
         private static bool _initialized = false;
         private MultiplayerUI _multiplayerUI;
+        private Harmony _harmony;
 
         private void Awake()
         {
@@ -33,6 +37,19 @@ namespace AutonautsMP
             
             // Initialize TestSyncManager (for network testing)
             TestSyncManager.Initialize();
+            
+            // Initialize TransformSyncManager (for player position sync)
+            TransformSyncManager.Initialize();
+            
+            // Initialize game state detector
+            GameStateDetector.Initialize();
+            
+            // Initialize Harmony and apply patches
+            _harmony = new Harmony(GUID);
+            _harmony.PatchAll();
+            
+            // Try to apply game-specific patches
+            GameStatePatch.TryApplyPatches(_harmony);
 
             // Log startup
             Logger.LogInfo("================================================");
@@ -57,6 +74,9 @@ namespace AutonautsMP
 
             // Update network manager (poll events)
             NetworkManager.Instance.Update();
+            
+            // Update transform sync (interpolation and sending)
+            TransformSyncManager.Instance.Update();
         }
         
         private void OnApplicationQuit()

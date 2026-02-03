@@ -1145,6 +1145,14 @@ namespace AutonautsMP.UI
         {
             DebugLogger.Info($"Host Game button clicked (Port: {_port})");
             
+            // Check if player is in a loaded savegame
+            if (!GameStateDetector.IsInGame)
+            {
+                _statusText = "Load a savegame first to host";
+                DebugLogger.Warning("Cannot host: not in a loaded game");
+                return;
+            }
+            
             if (!int.TryParse(_port, out int port) || port < 1 || port > 65535)
             {
                 _statusText = "Invalid port number (1-65535)";

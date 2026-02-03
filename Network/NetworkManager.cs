@@ -350,7 +350,7 @@ namespace AutonautsMP.Network
                         {
                             _players[clientId].Name = playerName;
                             DebugLogger.Info($"Player {clientId} name: {playerName}");
-                            DebugConsole.LogInfo($"Player {clientId} identified as: {playerName}");
+                            DebugConsole.LogInfo($"{playerName} has joined");
                             OnPlayerListUpdated?.Invoke();
                         }
                     }
